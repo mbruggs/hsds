@@ -14,6 +14,7 @@
 #
 import os
 
+
 app = None # global app handle
 if "LOG_LEVEL" in os.environ:
 	log_level = os.environ["LOG_LEVEL"]

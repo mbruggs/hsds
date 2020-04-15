@@ -2078,7 +2078,6 @@ class ValueTest(unittest.TestCase):
         print("testGetSelectionChunkedRefDataset", self.base_domain)
         headers = helper.getRequestHeaders(domain=self.base_domain)
 
-        
         hdf5_sample_bucket = config.get("hdf5_sample_bucket")
 
         if not hdf5_sample_bucket:
@@ -2162,6 +2161,7 @@ class ValueTest(unittest.TestCase):
         # read a selection
         req = self.endpoint + "/datasets/" + dset_id + "/value"
         params = {"select": "[1234567:1234568]"} # read 1 element, starting at index 1234567
+        params["nonstrict"] = 1  # allow use of aws lambda if configured
         rsp = requests.get(req, params=params, headers=headers)
         if rsp.status_code == 404:
             print("s3object: {} not found, skipping hyperslab read chunk reference test".format(s3path))

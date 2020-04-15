@@ -1476,7 +1476,7 @@ async def GET_Value(request):
     num_chunks = getNumChunks(slices, layout)
     log.debug(f"num_chunks: {num_chunks}")
 
-    serverless_threshold = app["node_count"] * 4
+    serverless_threshold = 0 # <-tesst  app["node_count"] * 4
 
     max_chunks = int(config.get('max_chunks_per_request'))
     if num_chunks > max_chunks:

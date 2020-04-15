@@ -9,8 +9,8 @@ if [ -f ${ZIPFILE} ]; then
 fi
 
 # copy util files that are the same for lambda
-SRC=hsds/util
-DES=awslambda/chunkread/hsds/util
+SRC=../hsds/util
+DES=chunkread/hsds/util
 cp $SRC/arrayUtil.py $DES
 cp $SRC/hdf5dtype.py $DES
 cp $SRC/domainUtil.py $DES
