@@ -12,11 +12,10 @@ def lambda_handler(event, context):
     # run hyperslab or point selection based on event values
     app = get_app()
     params = {}
-    for k in ("chunk_id", "dset_json"):
-        if k not in event:
-            log.warn(f"expected to find key: {k} in event")
-            return {'statusCode': 404}
-        params[k] = event[k]
+    for k in ("chunk_id", "dset_json", "s3path", "bucket"):
+        if k in event:
+            log.debug(f"setting parameter: {k} to: {params[k]}")
+            params[k] = event[k]
     # params["select"]= "[1:2,0:8:2]" -> ((slice(1,2,1),slice(0,8,2)))
     if "select" in event:
         # hyperslab selection
