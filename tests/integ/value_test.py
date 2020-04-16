@@ -2456,6 +2456,7 @@ class ValueTest(unittest.TestCase):
         # read a selection
         req = self.endpoint + "/datasets/" + dset_id + "/value"
         params = {"select": "[1234567:1234568]"} # read 1 element, starting at index 1234567
+        params["nonstrict"] = 1 # enable SN to invoke lambda func
         rsp = requests.get(req, params=params, headers=headers)
 
         if rsp.status_code == 404:
