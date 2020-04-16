@@ -14,7 +14,7 @@ def lambda_handler(event, context):
     params = {}
     for k in ("chunk_id", "dset_json", "s3path", "bucket"):
         if k in event:
-            log.debug(f"setting parameter: {k} to: {params[k]}")
+            log.debug(f"setting parameter: {k} to: {event[k]}")
             params[k] = event[k]
     # params["select"]= "[1:2,0:8:2]" -> ((slice(1,2,1),slice(0,8,2)))
     if "select" in event:
