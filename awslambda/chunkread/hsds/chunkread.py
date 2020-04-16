@@ -80,9 +80,13 @@ def read_hyperslab(app, params):
         bucket = params["bucket"]
     else:
         bucket = config.get("bucket_name")
-    if not bucket:
-        msg = "bucket not specified"
-        log.warn(msg)
+    if "s3path" in params:
+        s3path = params["s3path"]
+    else:
+        s3path = None
+    if not bucket and not s3path:
+        msg = "bucket or s3path not specified"
+        log.error(msg)
         raise KeyError()
 
     chunk_arr = get_chunk(app, chunk_id, dset_json, bucket=bucket)
