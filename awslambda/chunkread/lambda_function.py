@@ -12,7 +12,7 @@ def lambda_handler(event, context):
     # run hyperslab or point selection based on event values
     app = get_app()
     params = {}
-    for k in ("chunk_id", "dset_json", "bucket"):
+    for k in ("chunk_id", "dset_json"):
         if k not in event:
             log.warn(f"expected to find key: {k} in event")
             return {'statusCode': 404}
