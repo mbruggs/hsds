@@ -88,8 +88,14 @@ def read_hyperslab(app, params):
         msg = "bucket or s3path not specified"
         log.error(msg)
         raise KeyError()
+    if "s3offset" in params:
+        s3offset = params["s3offset"]
+    else:
+        s3offset = 0
+    if "s3size" in params:
+        s3size = params["s3size"]
 
-    chunk_arr = get_chunk(app, chunk_id, dset_json, bucket=bucket)
+    chunk_arr = get_chunk(app, chunk_id, dset_json, bucket=bucket, s3path=s3path, s3offset=s3offset, s3size=s3size)
 
     if "slices" in params:
         arr = chunkReadSelection(chunk_arr, slices=params["slices"])

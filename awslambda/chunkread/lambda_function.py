@@ -12,7 +12,7 @@ def lambda_handler(event, context):
     # run hyperslab or point selection based on event values
     app = get_app()
     params = {}
-    for k in ("chunk_id", "dset_json", "s3path", "bucket"):
+    for k in ("chunk_id", "dset_json", "bucket", "s3path", "s3offset", "s3offset", "s3size"):
         if k in event:
             log.debug(f"setting parameter: {k} to: {event[k]}")
             params[k] = event[k]
