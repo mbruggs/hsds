@@ -49,6 +49,8 @@ def get_chunk(app, params):
         s3offset = 0
     if "s3size" in params:
         s3size = params["s3size"]
+    else:
+        s3size = 0
 
     chunk_arr = None
     chunk_dims = getChunkLayout(dset_json)

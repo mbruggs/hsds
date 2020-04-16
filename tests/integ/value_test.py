@@ -1358,7 +1358,7 @@ class ValueTest(unittest.TestCase):
 
         # read 2x2 block from dataset with step of 2
         params = {"select": "[0:4:2, 0:4:2]"}
-        params["nonstrict"] = 1
+        params["nonstrict"] = 1  
         rsp = requests.get(req, params=params, headers=headers)
         self.assertEqual(rsp.status_code, 200)
         rspJson = json.loads(rsp.text)
