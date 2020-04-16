@@ -16,7 +16,39 @@ def get_app():
     app["bucket_name"] = config.get("bucket_name")
     return app
 
-def get_chunk(app, chunk_id, dset_json, bucket=None, s3path=None, s3offset=0, s3size=0):
+def get_chunk(app, params):
+
+    if "chunk_id" not in params:
+        msg = "chunk_id not in params"
+        log.warn(msg)
+        raise KeyError()
+    chunk_id = params["chunk_id"]
+
+    if "dset_json" not in params:
+        msg = "dset_json not in params"
+        log.warn(msg)
+        raise KeyError()
+    dset_json = params["dset_json"]
+
+    if "bucket" in params:
+        bucket = params["bucket"]
+    else:
+        bucket = config.get("bucket_name")
+    if "s3path" in params:
+        s3path = params["s3path"]
+    else:
+        s3path = None
+    if not bucket and not s3path:
+        msg = "bucket or s3path not specified"
+        log.error(msg)
+        raise KeyError()
+
+    if "s3offset" in params:
+        s3offset = params["s3offset"]
+    else:
+        s3offset = 0
+    if "s3size" in params:
+        s3size = params["s3size"]
 
     chunk_arr = None
     chunk_dims = getChunkLayout(dset_json)
@@ -64,38 +96,7 @@ def get_chunk(app, chunk_id, dset_json, bucket=None, s3path=None, s3offset=0, s3
 
 # read hyperslab from chunk
 def read_hyperslab(app, params):
-    if "chunk_id" not in params:
-        msg = "chunk_id not in params"
-        log.warn(msg)
-        raise KeyError()
-    chunk_id = params["chunk_id"]
-
-    if "dset_json" not in params:
-        msg = "dset_json not in params"
-        log.warn(msg)
-        raise KeyError()
-    dset_json = params["dset_json"]
-
-    if "bucket" in params:
-        bucket = params["bucket"]
-    else:
-        bucket = config.get("bucket_name")
-    if "s3path" in params:
-        s3path = params["s3path"]
-    else:
-        s3path = None
-    if not bucket and not s3path:
-        msg = "bucket or s3path not specified"
-        log.error(msg)
-        raise KeyError()
-    if "s3offset" in params:
-        s3offset = params["s3offset"]
-    else:
-        s3offset = 0
-    if "s3size" in params:
-        s3size = params["s3size"]
-
-    chunk_arr = get_chunk(app, chunk_id, dset_json, bucket=bucket, s3path=s3path, s3offset=s3offset, s3size=s3size)
+    chunk_arr = get_chunk(app, params)
 
     if "slices" in params:
         arr = chunkReadSelection(chunk_arr, slices=params["slices"])
