@@ -13,7 +13,7 @@ def lambda_handler(event, context):
     app = get_app()
     params = {}
     b64data = None
-    for k in ("chunk_id", "dset_json", "bucket", "s3path", "s3offset", "s3offset", "s3size"):
+    for k in ("chunk_id", "dset_json", "bucket", "s3path", "s3offset", "s3offset", "s3size", "num_points"):
         if k in event:
             log.debug(f"setting parameter: {k} to: {event[k]}")
             params[k] = event[k]
