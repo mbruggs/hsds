@@ -1,8 +1,4 @@
-import json
-import base64
 from botocore.exceptions import ClientError
-
-
 from .hsds.chunkread import read_hyperslab, read_points, get_app
 from .hsds import hsds_logger as log
 
@@ -12,6 +8,7 @@ def lambda_handler(event, context):
     # run hyperslab or point selection based on event values
     app = get_app()
     params = {}
+    status_code = 500
     b64data = None
     for k in ("chunk_id", "dset_json", "bucket", "s3path", "s3offset", "s3offset", "s3size", "num_points"):
         if k in event:
@@ -19,7 +16,6 @@ def lambda_handler(event, context):
             params[k] = event[k]
     if "select" in event:
         # selection
-        status_code = 500
         select_str = event["select"]
         if select_str[0] == '[' and select_str[-1] == ']':
             select_str = select_str[1:-1]
@@ -48,14 +44,20 @@ def lambda_handler(event, context):
         response_code = ce.response["Error"]["Code"]
         status_code = 500
         if response_code in ("NoSuchKey", "404") or response_code == 404:
+            log.warn("NotFound = NoSuchKey")
             status_code = 404
         elif response_code == "NoSuchBucket":
+            log.warn("NotFound - NoSuchBucket")
             status_code = 404
+
         elif response_code in ("AccessDenied", "401", "403") or response_code in (401, 403):
+            log.warn("AccessDenied")
             status_code = 403
         else:
+            log.error(f"Unexpected Error: {ce}")
             status_code = 500
-    except KeyError:
+    except KeyError as ke:
+        log.error(f"KeyError: {ke}")
         status_code = 500
     rsp = { 'statusCode': status_code }
     if b64data:
