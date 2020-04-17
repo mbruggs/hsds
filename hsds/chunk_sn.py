@@ -375,7 +375,7 @@ async def read_point_sel(app, chunk_id, dset_json, point_list, point_index, np_a
             params["dset_json"] = dset_json
             base64_data = base64.b64encode(post_data).decode('ascii')
             log.debug(f"point data: {base64_data}")
-            params["np_arr_points"] = base64_data
+            params["point_arr"] = base64_data
             start_time = time.time()
             log.info(f"invoking lambda function {lambda_function} with payload: {params} start: {start_time}")
             payload = json.dumps(params)

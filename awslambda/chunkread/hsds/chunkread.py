@@ -125,7 +125,7 @@ def read_points(app, params):
         raise KeyError()
     dset_json = params["dset_json"]
 
-    if "np_arr_points" not in params:
+    if "point_arr" not in params:
         msg = "point_arr not in params"
         log.warn(msg)
         raise KeyError()

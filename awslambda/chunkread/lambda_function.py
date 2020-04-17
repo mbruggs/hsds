@@ -37,8 +37,9 @@ def lambda_handler(event, context):
         params["slices"] = slices
     # params["select"]= "[1:2,0:8:2]" -> ((slice(1,2,1),slice(0,8,2)))
     try:
-        if "np_arr_points" in event:
+        if "point_arr" in event:
             # point selection
+            params["point_arr"] = event["point_arr"]
             b64data = read_points(app, params)
         else:
             # hyperslab selection
