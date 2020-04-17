@@ -40,6 +40,7 @@ def lambda_handler(event, context):
         else:
             # hyperslab selection
             b64data = read_hyperslab(app, params)
+        status_code = 200
     except ClientError as ce:
         response_code = ce.response["Error"]["Code"]
         status_code = 500
