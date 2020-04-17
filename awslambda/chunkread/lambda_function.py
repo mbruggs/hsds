@@ -3,7 +3,7 @@ import base64
 from botocore.exceptions import ClientError
 
 
-from .hsds.chunkread import read_hyperslab, get_app
+from .hsds.chunkread import read_hyperslab, read_points, get_app
 from .hsds import hsds_logger as log
 
 
@@ -12,13 +12,13 @@ def lambda_handler(event, context):
     # run hyperslab or point selection based on event values
     app = get_app()
     params = {}
+    b64data = None
     for k in ("chunk_id", "dset_json", "bucket", "s3path", "s3offset", "s3offset", "s3size"):
         if k in event:
             log.debug(f"setting parameter: {k} to: {event[k]}")
             params[k] = event[k]
-    # params["select"]= "[1:2,0:8:2]" -> ((slice(1,2,1),slice(0,8,2)))
     if "select" in event:
-        # hyperslab selection
+        # selection
         status_code = 500
         select_str = event["select"]
         if select_str[0] == '[' and select_str[-1] == ']':
@@ -35,34 +35,28 @@ def lambda_handler(event, context):
                 step = 1
             slices.append(slice(start, stop, step))
         params["slices"] = slices
-        try:
+    # params["select"]= "[1:2,0:8:2]" -> ((slice(1,2,1),slice(0,8,2)))
+    try:
+        if "np_arr_points" in event:
+            # point selection
+            b64data = read_points(app, params)
+        else:
+            # hyperslab selection
             b64data = read_hyperslab(app, params)
-            return {
-                'statusCode': 200,
-                'body': b64data
-            }
-        except ClientError as ce:
-            response_code = ce.response["Error"]["Code"]
+    except ClientError as ce:
+        response_code = ce.response["Error"]["Code"]
+        status_code = 500
+        if response_code in ("NoSuchKey", "404") or response_code == 404:
+            status_code = 404
+        elif response_code == "NoSuchBucket":
+            status_code = 404
+        elif response_code in ("AccessDenied", "401", "403") or response_code in (401, 403):
+            status_code = 403
+        else:
             status_code = 500
-            if response_code in ("NoSuchKey", "404") or response_code == 404:
-                status_code = 404
-            elif response_code == "NoSuchBucket":
-                status_code = 404
-            elif response_code in ("AccessDenied", "401", "403") or response_code in (401, 403):
-                status_code = 403
-            else:
-                status_code = 500
-        except KeyError:
-            status_code = 500
-        return {
-            'statusCode': status_code
-        }
-
-
-    else:
-        data = b'tbd'
-        base64data = base64.b64encode(data)
-        return {
-            'statusCode': 200,
-            'body': json.dumps(base64data.decode("ascii"))
-        }
+    except KeyError:
+        status_code = 500
+    rsp = { 'statusCode': status_code }
+    if b64data:
+        rsp['body'] = b64data
+    return rsp

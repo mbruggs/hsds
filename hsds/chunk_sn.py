@@ -38,7 +38,27 @@ from .servicenode_lib import getObjectJson, validateAction
 from . import config
 from . import hsds_logger as log
 
-
+"""
+ Check nonstrict parameter.
+"""
+def _isNonStrict(params):
+    retval = False
+    if "nonstrict" in params:
+        v = params["nonstrict"]
+        if isinstance(v, str):
+            if v.startswith("T") or v.startswith("t"):
+                retval = True   # True, true, T, t
+            else:
+                try:
+                    n = int(v)
+                    if n != 0:
+                        retval = True
+                except ValueError:
+                    log.warn(f"unexpected nonstrict param value: {v}")
+        else:
+            if v:
+                retval = True
+    return retval
 
 """
 Write data to given chunk_id.  Pass in type, dims, and selection area.
@@ -286,9 +306,9 @@ point_list: array of points to read
 point_index: index of arr element to update for a given point
 arr: numpy array to store read bytes
 """
-async def read_point_sel(app, chunk_id, dset_json, point_list, point_index, np_arr, chunk_map=None, bucket=None):
+async def read_point_sel(app, chunk_id, dset_json, point_list, point_index, np_arr, chunk_map=None, bucket=None, serverless=False):
 
-    msg = f"read_point_sel, chunk_id: {chunk_id}"
+    msg = f"read_point_sel, chunk_id: {chunk_id}, serverless: {serverless}"
     log.info(msg)
 
     partition_chunk_id = getChunkIdForPartition(chunk_id, dset_json)
@@ -347,40 +367,100 @@ async def read_point_sel(app, chunk_id, dset_json, point_list, point_index, np_a
 
     if np_arr_rsp is None:
 
-        try:
-            async with client.post(req, params=params, data=post_data) as rsp:
-                log.debug(f"http_post {req} status: <{rsp.status}>")
-                if rsp.status == 200:
-                    rsp_data = await rsp.read()  # read response as bytes
+        if serverless:
+            lambda_function = config.get("aws_lambda_chunkread_function")
+            client = getLambdaClient(app)
+            # extra params for lambda function
+            params["chunk_id"] = chunk_id
+            params["dset_json"] = dset_json
+            base64_data = base64.b64encode(post_data).decode('ascii')
+            log.debug(f"point data: {base64_data}")
+            params["np_arr_points"] = base64_data
+            start_time = time.time()
+            log.info(f"invoking lambda function {lambda_function} with payload: {params} start: {start_time}")
+            payload = json.dumps(params)
+            try:
+                rsp = await client.invoke(FunctionName=lambda_function, Payload=payload)
+                finish_time = time.time()
+                log.info(f"lambda.invoke({lambda_function} start={start_time:.4f} finish={finish_time:.4f} elapsed={finish_time-start_time:.4f}")
+
+            except ClientError as ce:
+                log.error(f"Error for lambda invoke: {ce} ")
+                raise HTTPInternalServerError()
+            except CancelledError as cle:
+                log.warn(f"CancelledError for lambda invoke: {cle}")
+                return
+            log.info(f"got lambda response: {rsp}")
+
+            lambda_status = rsp["StatusCode"]
+
+            if lambda_status == 200:
+                body = rsp["Payload"]
+                payload = await body.read()
+                log.info(f"got rsp payload: {payload}")
+                payload_dict = json.loads(payload.decode("utf-8"))
+                if "statusCode" not in payload_dict:
+                    msg = f"expected to find statusCode in payload, but got: {payload_dict.keys()}"
+                    status_code= 500
+                else:
+                    status_code = payload_dict["statusCode"]
+
+                if status_code == 200:
+                    b64data = payload_dict["body"]
+                    rsp_data = base64.b64decode(b64data)
                     np_arr_rsp = bytesToArray(rsp_data, dt, (num_points,))
-                    npoints_read = len(np_arr_rsp)
-                    if npoints_read != num_points:
-                        msg = f"Expected {num_points} points, but got: {npoints_read}"
+            else:
+                status_code = lambda_status
+
+            if status_code == 404:
+                if "s3path" in params:
+                    s3path = params["s3path"]
+                    # external HDF5 file, should exist
+                    log.warn(f"s3path: {s3path} for S3 range get not found")
+                    raise HTTPNotFound()
+                # no data, return default array
+                np_arr_rsp = defaultArray()
+            elif status_code != 200:
+                msg = f"lambda invoke to {lambda_function} failed with code: {status_code}"
+                log.error(msg)
+                raise HTTPInternalServerError()
+        else:
+            # non-serverless = make request to DN node
+            try:
+                async with client.post(req, params=params, data=post_data) as rsp:
+                    log.debug(f"http_post {req} status: <{rsp.status}>")
+                    if rsp.status == 200:
+                        rsp_data = await rsp.read()  # read response as bytes
+                        np_arr_rsp = bytesToArray(rsp_data, dt, (num_points,))
+                    elif rsp.status == 404:
+                        if "s3path" in params:
+                            s3path = params["s3path"]
+                            # external HDF5 file, should exist
+                            log.warn(f"s3path: {s3path} for S3 range get found")
+                            raise HTTPNotFound()
+                        # no data, return zero array
+                        np_arr_rsp = defaultArray()
+                    else:
+                        msg = f"request to {req} failed with code: {rsp.status}"
                         log.error(msg)
                         raise HTTPInternalServerError()
-                elif rsp.status == 404:
-                    if "s3path" in params:
-                        s3path = params["s3path"]
-                        # external HDF5 file, should exist
-                        log.warn(f"s3path: {s3path} for S3 range get found")
-                        raise HTTPNotFound()
-                    # no data, return zero array
-                    np_arr_rsp = defaultArray()
-                else:
-                    msg = f"request to {req} failed with code: {rsp.status}"
-                    log.error(msg)
-                    raise HTTPInternalServerError()
 
-        except ClientError as ce:
-            log.error(f"Error for http_get({req}): {ce} ")
-            raise HTTPInternalServerError()
-        except CancelledError as cle:
-            log.warn(f"CancelledError for http_get({req}): {cle}")
-            return
+            except ClientError as ce:
+                log.error(f"Error for http_get({req}): {ce} ")
+                raise HTTPInternalServerError()
+            except CancelledError as cle:
+                log.warn(f"CancelledError for http_get({req}): {cle}")
+                return
 
-    log.info(f"got {num_points} points response")
-    log.info(f"np_arr {np_arr}")
-    log.info(f"np_arr_rsp: {np_arr_rsp}")
+    npoints_read = len(np_arr_rsp)
+    log.info(f"got {npoints_read} points response")
+    log.debug(f"np_arr {np_arr}")
+    log.debug(f"np_arr_rsp: {np_arr_rsp}")
+
+    if npoints_read != num_points:
+        msg = f"Expected {num_points} points, but got: {npoints_read}"
+        log.error(msg)
+        raise HTTPInternalServerError()
 
     # Fill in the return array based on passed in index values
     for i in range(num_points):
@@ -535,7 +615,7 @@ async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_d
 """
 Return list of elements from a dataset
 """
-async def getPointData(app, dset_id, dset_json, points, bucket=None):
+async def getPointData(app, dset_id, dset_json, points, bucket=None, serverless=False):
     loop = app["loop"]
     num_points = len(points)
     log.info(f"getPointData for {num_points} points")
@@ -606,7 +686,7 @@ async def getPointData(app, dset_id, dset_json, points, bucket=None):
         point_list = item["points"]
         point_index = item["indices"]
         task = asyncio.ensure_future(read_point_sel(app, chunk_id, dset_json,
-            point_list, point_index, arr_rsp, chunk_map=chunk_map, bucket=bucket))
+            point_list, point_index, arr_rsp, chunk_map=chunk_map, bucket=bucket, serverless=serverless))
         tasks.append(task)
     await asyncio.gather(*tasks, loop=loop)
 
@@ -1476,7 +1556,7 @@ async def GET_Value(request):
     num_chunks = getNumChunks(slices, layout)
     log.debug(f"num_chunks: {num_chunks}")
 
-    serverless_threshold = 0 # <-tesst  app["node_count"] * 4
+    serverless_threshold =  app["node_count"] * config.get("aws_lambda_threshold")
 
     max_chunks = int(config.get('max_chunks_per_request'))
     if num_chunks > max_chunks:
@@ -1485,12 +1565,13 @@ async def GET_Value(request):
         raise HTTPRequestEntityTooLarge(num_chunks, max_chunks)
 
     lambda_function = config.get("aws_lambda_chunkread_function")
-    if "nonstrict" in params and params["nonstrict"] and lambda_function and num_chunks >= serverless_threshold:
+    nonstrict = _isNonStrict(params)
+    if nonstrict and lambda_function and num_chunks >= serverless_threshold:
         serverless = True
         log.info(f"using serverless for read on {num_chunks} chunks")
     else:
         serverless = False
-        if "nonstrict" not in params or not params["nonstrict"]:
+        if not nonstrict:
             reason = "nonstrict not specified"
         elif not lambda_function:
             reason = "no lambda function configured"
@@ -1672,6 +1753,7 @@ async def POST_Value(request):
     log.request(request)
 
     app = request.app
+    params = request.rel_url.query
     body = None
 
     dset_id = request.match_info.get('id')
@@ -1783,7 +1865,25 @@ async def POST_Value(request):
             num_points //= rank
             points = points.reshape((num_points, rank))  # conform to point index shape
 
-    arr_rsp = await getPointData(app, dset_id, dset_json, points, bucket=bucket)
+    serverless_threshold =  app["node_count"] * config.get("aws_lambda_threshold")
+
+    lambda_function = config.get("aws_lambda_chunkread_function")
+    nonstrict = _isNonStrict(params)
+    if nonstrict and lambda_function and num_points >= serverless_threshold:
+        serverless = True
+        log.info(f"using serverless for read on {num_points} points")
+    else:
+        serverless = False
+        if not nonstrict:
+            reason = "nonstrict not specified"
+        elif not lambda_function:
+            reason = "no lambda function configured"
+        else:
+            reason = f"num_points is {num_points} but threshold is {serverless_threshold}"
+
+        log.debug(f"not using serverless for read on {num_points} points - {reason}")
+
+    arr_rsp = await getPointData(app, dset_id, dset_json, points, bucket=bucket, serverless=serverless)
 
     log.debug(f"arr shape: {arr_rsp.shape}")
 

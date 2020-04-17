@@ -110,7 +110,7 @@ def read_hyperslab(app, params):
 
     return base64data.decode('ascii')
 
-# 
+#
 # read point selection from chunk
 def read_points(app, params):
     if "chunk_id" not in params:
@@ -125,16 +125,7 @@ def read_points(app, params):
         raise KeyError()
     dset_json = params["dset_json"]
 
-    if "bucket" in params:
-        bucket = params["bucket"]
-    else:
-        bucket = config.get("bucket_name")
-    if not bucket:
-        msg = "bucket not specified"
-        log.warn(msg)
-        raise KeyError()
-
-    if "point_arr" not in params:
+    if "np_arr_points" not in params:
         msg = "point_arr not in params"
         log.warn(msg)
         raise KeyError()
@@ -143,8 +134,11 @@ def read_points(app, params):
 
     chunk_layout = getChunkLayout(dset_json)
 
-    chunk_arr = get_chunk(app, chunk_id, dset_json, bucket=bucket)
+    chunk_arr = get_chunk(app, params)
 
     arr = chunkReadPoints(chunk_id=chunk_id, chunk_layout=chunk_layout, chunk_arr=chunk_arr, point_arr=point_arr)
 
-    return arr
+    bdata = arrayToBytes(arr)
+    base64data = base64.b64encode(bdata)
+
+    return base64data.decode('ascii')
