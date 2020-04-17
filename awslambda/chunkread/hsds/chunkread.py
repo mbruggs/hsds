@@ -1,5 +1,6 @@
 import time
 import base64
+import numpy as np
 from . import config
 from . import hsds_logger as log
 from .util.dsetUtil import getChunkLayout, getDeflateLevel, isShuffle
@@ -129,12 +130,28 @@ def read_points(app, params):
         msg = "point_arr not in params"
         log.warn(msg)
         raise KeyError()
+    point_data_b64 = params["point_arr"]
+    point_data = base64.b64decode(point_data_b64)
 
-    point_arr = params["point_arr"]
+
+    if "num_points" not in params:
+        msg = "num_points not in params"
+        log.warn(msg)
+        raise KeyError()
+    num_points = params["num_points"]
+
+    chunk_arr = get_chunk(app, params)
+    rank = len(chunk_arr.shape)
+
+    point_dt = np.dtype('uint64')
+    point_shape = (num_points, rank)
+    point_arr = bytesToArray(point_data, point_dt, point_shape)
 
     chunk_layout = getChunkLayout(dset_json)
 
-    chunk_arr = get_chunk(app, params)
+    point_shape = (num_points, rank)
+
+    point_arr = bytesToArray(point_data, point_dt, point_shape)
 
     arr = chunkReadPoints(chunk_id=chunk_id, chunk_layout=chunk_layout, chunk_arr=chunk_arr, point_arr=point_arr)
 
