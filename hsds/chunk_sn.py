@@ -554,7 +554,7 @@ async def write_point_sel(app, chunk_id, dset_json, point_list, point_data, buck
 """
 Query for a given chunk_id.  Pass in type, dims, selection area, and query.
 """
-async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_dict, bucket=None):
+async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_dict, bucket=None, serverless=False):
     """ read the chunk selection from the DN
     chunk_id: id of chunk to write to
     chunk_sel: chunk-relative selection to read from
@@ -562,16 +562,12 @@ async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_d
     """
     msg = f"read_chunk_query, chunk_id: {chunk_id}, slices: {slices}, query: {query}"
     log.info(msg)
+    chunk_rsp = None
 
     partition_chunk_id = getChunkIdForPartition(chunk_id, dset_json)
     if partition_chunk_id != chunk_id:
         log.debug(f"using partition_chunk_id: {partition_chunk_id}")
         chunk_id = partition_chunk_id  # replace the chunk_id
-
-    req = getDataNodeUrl(app, chunk_id)
-    req += "/chunks/" + chunk_id
-    log.debug("GET chunk req: " + req)
-    client = get_http_client(app)
 
     layout = getChunkLayout(dset_json)
     chunk_sel = getChunkCoverage(chunk_id, slices, layout)
@@ -587,31 +583,95 @@ async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_d
     chunk_shape = getSelectionShape(chunk_sel)
     log.debug(f"chunk_shape: {chunk_shape}")
     setSliceQueryParam(params, chunk_sel)
-    dn_rsp = None
-    try:
-        async with client.get(req, params=params) as rsp:
-            log.debug(f"http_get {req} status: <{rsp.status}>")
-            if rsp.status == 200:
-                dn_rsp = await rsp.json()  # read response as json
-                log.debug(f"got query data: {dn_rsp}")
-            elif rsp.status == 404:
-                # no data, don't return any results
-                dn_rsp = {"index": [], "value": []}
-            elif rsp.status == 400:
-                log.warn(f"request {req} failed withj code {rsp.status}")
-                raise HTTPBadRequest()
+
+    if serverless:
+        lambda_function = config.get("aws_lambda_chunkread_function")
+        client = getLambdaClient(app)
+        # extra params for lambda function
+        params["chunk_id"] = chunk_id
+        params["dset_json"] = dset_json
+        start_time = time.time()
+        log.info(f"invoking lambda function {lambda_function} with payload: {params} start: {start_time}")
+        payload = json.dumps(params)
+        try:
+            rsp = await client.invoke(FunctionName=lambda_function, Payload=payload)
+            finish_time = time.time()
+            log.info(f"lambda.invoke({lambda_function} start={start_time:.4f} finish={finish_time:.4f} elapsed={finish_time-start_time:.4f}")
+
+        except ClientError as ce:
+            log.error(f"Error for lambda invoke: {ce} ")
+            raise HTTPInternalServerError()
+        except CancelledError as cle:
+            log.warn(f"CancelledError for lambda invoke: {cle}")
+            return
+        log.info(f"got lambda response: {rsp}")
+
+        lambda_status = rsp["StatusCode"]
+
+        if lambda_status == 200:
+            body = rsp["Payload"]
+            payload = await body.read()
+            log.info(f"got rsp payload: {payload}")
+            payload_dict = json.loads(payload.decode("utf-8"))
+            if "statusCode" not in payload_dict:
+                msg = f"expected to find statusCode in payload, but got: {payload_dict.keys()}"
+                status_code= 500
             else:
-                log.error(f"request {req} failed with code: {rsp.status}")
-                raise HTTPInternalServerError()
+                status_code = payload_dict["statusCode"]
 
-    except ClientError as ce:
-        log.error(f"Error for http_get({req}): {ce} ")
-        raise HTTPInternalServerError()
-    except CancelledError as cle:
-        log.warn(f"CancelledError for http_get({req}): {cle}")
-        return
+            if status_code == 200:
+                chunk_rsp = payload_dict["body"]
+        
+        else:
+            status_code = lambda_status
 
-    rsp_dict[chunk_id] = dn_rsp
+        if status_code == 404:
+            if "s3path" in params:
+                s3path = params["s3path"]
+                # external HDF5 file, should exist
+                log.warn(f"s3path: {s3path} for S3 range get not found")
+                raise HTTPNotFound()
+            # no data, return empty dictionary
+            chunk_rsp = {}
+        elif status_code != 200:
+            msg = f"lambda invoke to {lambda_function} failed with code: {status_code}"
+            log.error(msg)
+            raise HTTPInternalServerError()
+    else:
+        # not serverless
+        req = getDataNodeUrl(app, chunk_id)
+        req += "/chunks/" + chunk_id
+        log.debug("GET chunk req: " + req)
+        client = get_http_client(app)
+        
+        try:
+            async with client.get(req, params=params) as rsp:
+                log.debug(f"http_get {req} status: <{rsp.status}>")
+                if rsp.status == 200:
+                    chunk_rsp = await rsp.json()  # read response as json
+                    log.debug(f"got query data: {chunk_rsp}")
+                elif rsp.status == 404:
+                    # no data, don't return any results
+                    chunk_rsp = {"index": [], "value": []}
+                elif rsp.status == 400:
+                    log.warn(f"request {req} failed withj code {rsp.status}")
+                    raise HTTPBadRequest()
+                else:
+                    log.error(f"request {req} failed with code: {rsp.status}")
+                    raise HTTPInternalServerError()
+
+        except ClientError as ce:
+            log.error(f"Error for http_get({req}): {ce} ")
+            raise HTTPInternalServerError()
+        except CancelledError as cle:
+            log.warn(f"CancelledError for http_get({req}): {cle}")
+            return
+
+        if chunk_rsp is None:
+            log.error("chunk_rsp is none for query")
+            raise HTTPInternalServerError()
+
+        rsp_dict[chunk_id] = chunk_rsp
 
 """
 Return list of elements from a dataset
@@ -1597,7 +1657,7 @@ async def GET_Value(request):
             log.warn(msg)
             raise HTTPBadRequest(reason=msg)
         try:
-            resp = await doQueryRead(request, chunk_ids, dset_json, slices, bucket=bucket)
+            resp = await doQueryRead(request, chunk_ids, dset_json, slices, bucket=bucket, serverless=serverless)
         except CancelledError as ce:
             log.warn(f"Cancelled error on query read: {ce}")
             resp = await jsonResponse(request, None)  # TBD: what do return if client cancels
@@ -1610,7 +1670,7 @@ async def GET_Value(request):
     log.response(request, resp=resp)
     return resp
 
-async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None):
+async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None, serverless=False):
     app = request.app
     params = request.rel_url.query
     query = params["query"]
@@ -1650,7 +1710,7 @@ async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None):
         # run query on DN nodes
         dn_rsp = {} # dictionary keyed by chunk_id
         for chunk_id in next_chunks:
-            task = asyncio.ensure_future(read_chunk_query(app, chunk_id, dset_json, slices, query, limit, dn_rsp, bucket=bucket))
+            task = asyncio.ensure_future(read_chunk_query(app, chunk_id, dset_json, slices, query, limit, dn_rsp, bucket=bucket, serverless=serverless))
             tasks.append(task)
         await asyncio.gather(*tasks, loop=loop)
 

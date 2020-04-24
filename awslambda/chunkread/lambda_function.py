@@ -1,5 +1,5 @@
 from botocore.exceptions import ClientError
-from .hsds.chunkread import read_hyperslab, read_points, get_app
+from .hsds.chunkread import read_hyperslab, read_points, read_query, get_app
 from .hsds import hsds_logger as log
 
 
@@ -10,6 +10,7 @@ def lambda_handler(event, context):
     params = {}
     status_code = 500
     b64data = None
+    jsondata = None
     for k in ("chunk_id", "dset_json", "bucket", "s3path", "s3offset", "s3offset", "s3size", "num_points"):
         if k in event:
             log.debug(f"setting parameter: {k} to: {event[k]}")
@@ -37,6 +38,10 @@ def lambda_handler(event, context):
             # point selection
             params["point_arr"] = event["point_arr"]
             b64data = read_points(app, params)
+        elif "query" in event:
+            # query
+            params["query"] = even["query"]
+            jsondata = read_query(app, params)
         else:
             # hyperslab selection
             b64data = read_hyperslab(app, params)
@@ -63,4 +68,6 @@ def lambda_handler(event, context):
     rsp = { 'statusCode': status_code }
     if b64data:
         rsp['body'] = b64data
+    elif jsondata:
+        rsp['body'] = jsondata
     return rsp

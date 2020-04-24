@@ -159,3 +159,42 @@ def read_points(app, params):
     base64data = base64.b64encode(bdata)
 
     return base64data.decode('ascii')
+
+# query chunk contents
+def read_query(app, params):
+    if "chunk_id" not in params:
+        msg = "chunk_id not in params"
+        log.warn(msg)
+        raise KeyError()
+    chunk_id = params["chunk_id"]
+
+    if "dset_json" not in params:
+        msg = "dset_json not in params"
+        log.warn(msg)
+        raise KeyError()
+    dset_json = params["dset_json"]
+
+    if "query" not in params:
+        log.error("no query specified")
+        raise KeyError()
+
+    query = params["query"]
+
+    log.debug(f"read_query -- chunk_id: {chunk_id} query: {query}")
+
+    chunk_layout = getChunkLayout(dset_json)
+
+    chunk_arr = get_chunk(app, params)
+
+    if "slices" in params:
+        selection = params["selection"]
+    else:
+        selection = None
+
+    read_resp = chunkQuery(chunk_id=chunk_id, chunk_layout=dims, chunk_arr=chunk_arr, slices=selection,
+                query=query, limit=limit, return_json=True)
+    
+    log.debug(f"read_query -- returning: {read_resp}")
+
+    return read_resp
+
