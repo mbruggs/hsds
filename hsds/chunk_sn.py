@@ -139,7 +139,7 @@ async def read_chunk_hyperslab(app, chunk_id, dset_json, slices, np_arr, chunk_m
     """
     if not bucket:
         bucket = config.get("bucket_name")
-    msg = f"read_chunk_hyperslab, chunk_id: {chunk_id}, slices: {slices}, bucket: {bucket}"
+    msg = f"read_chunk_hyperslab, chunk_id: {chunk_id}, slices: {slices}, bucket: {bucket}, serverless: {serverless}"
     log.info(msg)
     if chunk_map and chunk_id not in chunk_map:
         log.warn(f"expected to find {chunk_id} in chunk_map")
@@ -207,13 +207,15 @@ async def read_chunk_hyperslab(app, chunk_id, dset_json, slices, np_arr, chunk_m
                 rsp = await client.invoke(FunctionName=lambda_function, Payload=payload)
                 finish_time = time.time()
                 log.info(f"lambda.invoke({lambda_function} start={start_time:.4f} finish={finish_time:.4f} elapsed={finish_time-start_time:.4f}")
-
             except ClientError as ce:
                 log.error(f"Error for lambda invoke: {ce} ")
                 raise HTTPInternalServerError()
             except CancelledError as cle:
                 log.warn(f"CancelledError for lambda invoke: {cle}")
                 return
+            except Exception as e:
+                log.error(f"Unexpected exception for lamdea invoke: {e}, type: {type(e)}")
+                raise HTTPInternalServerError()
             log.info(f"got lambda response: {rsp}")
 
             lambda_status = rsp["StatusCode"]
@@ -384,13 +386,15 @@ async def read_point_sel(app, chunk_id, dset_json, point_list, point_index, np_a
                 rsp = await client.invoke(FunctionName=lambda_function, Payload=payload)
                 finish_time = time.time()
                 log.info(f"lambda.invoke({lambda_function} start={start_time:.4f} finish={finish_time:.4f} elapsed={finish_time-start_time:.4f}")
-
             except ClientError as ce:
                 log.error(f"Error for lambda invoke: {ce} ")
                 raise HTTPInternalServerError()
             except CancelledError as cle:
                 log.warn(f"CancelledError for lambda invoke: {cle}")
                 return
+            except Exception as e:
+                log.error(f"Unexpected exception for lamdea invoke: {e}, type: {type(e)}")
+                raise HTTPInternalServerError()
             log.info(f"got lambda response: {rsp}")
 
             lambda_status = rsp["StatusCode"]
@@ -597,13 +601,15 @@ async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_d
             rsp = await client.invoke(FunctionName=lambda_function, Payload=payload)
             finish_time = time.time()
             log.info(f"lambda.invoke({lambda_function} start={start_time:.4f} finish={finish_time:.4f} elapsed={finish_time-start_time:.4f}")
-
         except ClientError as ce:
             log.error(f"Error for lambda invoke: {ce} ")
             raise HTTPInternalServerError()
         except CancelledError as cle:
             log.warn(f"CancelledError for lambda invoke: {cle}")
             return
+        except Exception as e:
+            log.error(f"Unexpected exception for lamdea invoke: {e}, type: {type(e)}")
+            raise HTTPInternalServerError()
         log.info(f"got lambda response: {rsp}")
 
         lambda_status = rsp["StatusCode"]
