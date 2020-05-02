@@ -187,7 +187,7 @@ def read_query(app, params):
     chunk_arr = get_chunk(app, params)
 
     if "slices" in params:
-        selection = params["selection"]
+        selection = params["slices"]
     else:
         selection = None
 
