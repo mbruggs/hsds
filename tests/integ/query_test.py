@@ -288,6 +288,8 @@ class QueryTest(unittest.TestCase):
         # read a selection
         req = self.endpoint + "/datasets/" + dset_id + "/value"
         params = {'query': "symbol == b'AAPL'" } # query for AAPL
+        #params = {'query': "symbol == b'CVX'" } # query for CVX
+        #params["select"] = "[0:100]"
         params["nonstrict"] = 1 # enable SN to invoke lambda func
         rsp = requests.get(req, params=params, headers=headers)
 
@@ -301,6 +303,7 @@ class QueryTest(unittest.TestCase):
         self.assertTrue("value" in rspJson)
         self.assertTrue("index" in rspJson)
         readData = rspJson["value"]
+        print("readData:", readData)
 
         # the following is not working - s3paths not setup for query?
         #self.assertEqual(len(readData), 1)

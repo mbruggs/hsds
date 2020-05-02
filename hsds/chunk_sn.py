@@ -558,7 +558,7 @@ async def write_point_sel(app, chunk_id, dset_json, point_list, point_data, buck
 """
 Query for a given chunk_id.  Pass in type, dims, selection area, and query.
 """
-async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_dict, bucket=None, serverless=False):
+async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_dict, chunk_map=None, bucket=None, serverless=False):
     """ read the chunk selection from the DN
     chunk_id: id of chunk to write to
     chunk_sel: chunk-relative selection to read from
@@ -581,9 +581,19 @@ async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_d
     params["query"] = query
     if limit > 0:
         params["Limit"] = limit
-    if bucket:
+    if chunk_map:
+        if chunk_id not in chunk_map:
+            # no data, don't return any results
+            chunk_rsp = {"index": [], "value": []}
+        else:
+            chunk_info = chunk_map[chunk_id]
+            params["s3path"] = chunk_info["s3path"]
+            params["s3offset"] = chunk_info["s3offset"]
+            params["s3size"] = chunk_info["s3size"]
+    elif bucket:
+        # bucket only applies if s3path not set
         params["bucket"] = bucket
-
+    
     chunk_shape = getSelectionShape(chunk_sel)
     log.debug(f"chunk_shape: {chunk_shape}")
     setSliceQueryParam(params, chunk_sel)
@@ -1683,6 +1693,7 @@ async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None, server
     log.info(f"Query request: {query}")
     loop = app["loop"]
 
+    dset_id = dset_json["id"]
     type_json = dset_json["type"]
     item_size = getItemSize(type_json)
 
@@ -1704,6 +1715,10 @@ async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None, server
     resp_index = []
     resp_value = []
     num_chunks = len(chunk_ids)
+    # Get information about where chunks are located
+    #   Will be None except for H5D_CHUNKED_REF_INDIRECT type
+    chunk_map = await getChunkInfoMap(app, dset_id, dset_json, chunk_ids, bucket=bucket)
+    log.debug(f"chunkinfo_map: {chunk_map}")
 
     while chunk_index < num_chunks:
         next_chunks = []
@@ -1716,7 +1731,7 @@ async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None, server
         # run query on DN nodes
         dn_rsp = {} # dictionary keyed by chunk_id
         for chunk_id in next_chunks:
-            task = asyncio.ensure_future(read_chunk_query(app, chunk_id, dset_json, slices, query, limit, dn_rsp, bucket=bucket, serverless=serverless))
+            task = asyncio.ensure_future(read_chunk_query(app, chunk_id, dset_json, slices, query, limit, dn_rsp, chunk_map=chunk_map, bucket=bucket, serverless=serverless))
             tasks.append(task)
         await asyncio.gather(*tasks, loop=loop)
 
