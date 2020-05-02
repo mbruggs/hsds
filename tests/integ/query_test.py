@@ -303,15 +303,15 @@ class QueryTest(unittest.TestCase):
         self.assertTrue("value" in rspJson)
         self.assertTrue("index" in rspJson)
         readData = rspJson["value"]
-        print("readData:", readData)
+        self.assertEqual(len(readData), 8813)
+        item = readData[0]
+        self.assertEqual(item[0], "1980.12.12")
 
-        # the following is not working - s3paths not setup for query?
-        #self.assertEqual(len(readData), 1)
-        #item = readData[0]
-        #self.assertEqual(item, ["AAPL", "20170102", 3054, 2933])
-        #self.assertEqual(item[0], "AAPL")
-        #indices = rspJson["index"]
-        #self.assertEqual(indices, [1])
+        self.assertEqual(item[1], "AAPL")
+        indices = rspJson["index"]
+        self.assertEqual(len(indices), 8813)
+        self.assertEqual(indices[0], 128912)
+
          
 
     def testPutQuery(self):
