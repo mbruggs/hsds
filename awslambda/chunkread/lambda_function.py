@@ -40,7 +40,7 @@ def lambda_handler(event, context):
             b64data = read_points(app, params)
         elif "query" in event:
             # query
-            params["query"] = even["query"]
+            params["query"] = event["query"]
             jsondata = read_query(app, params)
         else:
             # hyperslab selection
