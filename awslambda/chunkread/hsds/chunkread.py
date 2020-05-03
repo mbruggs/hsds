@@ -5,7 +5,7 @@ from . import config
 from . import hsds_logger as log
 from .util.dsetUtil import getChunkLayout, getDeflateLevel, isShuffle
 from .util.hdf5dtype import createDataType, getItemSize
-from .util.chunkUtil import getChunkSize, chunkReadSelection, chunkReadPoints
+from .util.chunkUtil import getChunkSize, chunkReadSelection, chunkReadPoints, chunkQuery
 from .util.idUtil import getS3Key
 from .util.storUtil import getStorBytes
 from .util.arrayUtil import bytesToArray, arrayToBytes
@@ -191,7 +191,12 @@ def read_query(app, params):
     else:
         selection = None
 
-    read_resp = chunkQuery(chunk_id=chunk_id, chunk_layout=dims, chunk_arr=chunk_arr, slices=selection,
+    if "limit" in params:
+        limit = params["limit"]
+    else:
+        limit=None
+
+    read_resp = chunkQuery(chunk_id=chunk_id, chunk_layout=chunk_layout, chunk_arr=chunk_arr, slices=selection,
                 query=query, limit=limit, return_json=True)
     
     log.debug(f"read_query -- returning: {read_resp}")
