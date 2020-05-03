@@ -38,7 +38,7 @@ if [ $dolint ]; then
     run_pyflakes "chunkread/hsds/util"
 fi
 
-exit 0
+
 # copy util files that are the same for lambda
 SRC=../hsds/util
 DES=chunkread/hsds/util
