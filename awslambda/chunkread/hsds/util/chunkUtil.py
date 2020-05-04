@@ -945,25 +945,24 @@ def chunkQuery(chunk_id=None, chunk_layout=None, chunk_arr=None, slices=None,
             log.debug("query update - got limit items")
             break
 
-    if values:
-        if return_json:
-            # return JSON list
-            result = {}
-            result["index"] = indices
-            result["value"] = _bytesArrayToList(values)
+    if return_json:
+        # return JSON list
+        result = {}
+        result["index"] = indices
+        result["value"] = _bytesArrayToList(values)
+    else:
+        # return the results as a numpy array
+        if rank == 1:
+            coord_type_str = "uint64"
         else:
-            # return the results as a numpy array
-            if rank == 1:
-                coord_type_str = "uint64"
-            else:
-                coord_type_str = f"({rank},)uint64"
-            result_dtype = np.dtype([("coord", np.dtype(coord_type_str)), ("value", dset_dtype)])
-            result = np.zeros((count,), dtype=result_dtype)
-            for i in range(count):
-                e = result[i]
-                e[0] = indices[i] 
-                e[1] = values[i]
-                result[i] = e
+            coord_type_str = f"({rank},)uint64"
+        result_dtype = np.dtype([("coord", np.dtype(coord_type_str)), ("value", dset_dtype)])
+        result = np.zeros((count,), dtype=result_dtype)
+        for i in range(count):
+            e = result[i]
+            e[0] = indices[i] 
+            e[1] = values[i]
+            result[i] = e
 
     log.info(f"chunkQuery returning: {count} rows")
     return result
