@@ -687,7 +687,7 @@ async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_d
             log.error("chunk_rsp is none for query")
             raise HTTPInternalServerError()
 
-        rsp_dict[chunk_id] = chunk_rsp
+    rsp_dict[chunk_id] = chunk_rsp
 
 """
 Return list of elements from a dataset
