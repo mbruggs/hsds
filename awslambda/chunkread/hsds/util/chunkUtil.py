@@ -945,10 +945,6 @@ def chunkQuery(chunk_id=None, chunk_layout=None, chunk_arr=None, slices=None,
             log.debug("query update - got limit items")
             break
 
-    if not values:
-        log.info("no hits for query")
-        return None   # no hits
-
     if values:
         if return_json:
             # return JSON list
