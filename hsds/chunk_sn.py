@@ -33,7 +33,7 @@ from .util.chunkUtil import getNumChunks, getChunkIds, getChunkId, getChunkIndex
 from .util.chunkUtil import getChunkCoverage, getDataCoverage, getChunkIdForPartition
 from .util.arrayUtil import bytesArrayToList, jsonToArray, getShapeDims, getNumElements, arrayToBytes, bytesToArray
 from .util.authUtil import getUserPasswordFromRequest, validateUserPassword
-from .util.awsLambdaClient import getLambdaClient
+from .util.awsLambdaClient import getLambdaClient, lambdaInvoke
 from .servicenode_lib import getObjectJson, validateAction
 from . import config
 from . import hsds_logger as log
@@ -599,60 +599,49 @@ async def read_chunk_query(app, chunk_id, dset_json, slices, query, limit, rsp_d
     setSliceQueryParam(params, chunk_sel)
 
     if serverless:
-        lambda_function = config.get("aws_lambda_chunkread_function")
-        client = getLambdaClient(app)
-        # extra params for lambda function
-        params["chunk_id"] = chunk_id
-        params["dset_json"] = dset_json
-        start_time = time.time()
-        log.info(f"invoking lambda function {lambda_function} with payload: {params} start: {start_time}")
-        payload = json.dumps(params)
-        try:
-            rsp = await client.invoke(FunctionName=lambda_function, Payload=payload)
-            finish_time = time.time()
-            log.info(f"lambda.invoke({lambda_function} start={start_time:.4f} finish={finish_time:.4f} elapsed={finish_time-start_time:.4f}")
-        except ClientError as ce:
-            log.error(f"Error for lambda invoke: {ce} ")
-            raise HTTPInternalServerError()
-        except CancelledError as cle:
-            log.warn(f"CancelledError for lambda invoke: {cle}")
-            return
-        except Exception as e:
-            log.error(f"Unexpected exception for lamdea invoke: {e}, type: {type(e)}")
-            raise HTTPInternalServerError()
-        log.info(f"got lambda response: {rsp}")
-
-        lambda_status = rsp["StatusCode"]
-
-        if lambda_status == 200:
-            body = rsp["Payload"]
-            payload = await body.read()
-            log.info(f"got rsp payload: {payload}")
-            payload_dict = json.loads(payload.decode("utf-8"))
-            if "statusCode" not in payload_dict:
-                msg = f"expected to find statusCode in payload, but got: {payload_dict.keys()}"
-                status_code= 500
-            else:
-                status_code = payload_dict["statusCode"]
-
-            if status_code == 200:
-                chunk_rsp = payload_dict["body"]
         
-        else:
-            status_code = lambda_status
+        # extra params for lambda function
+        params["chunk_id"] = chunk_id 
+        params["dset_json"] = dset_json
 
-        if status_code == 404:
-            if "s3path" in params:
-                s3path = params["s3path"]
-                # external HDF5 file, should exist
-                log.warn(f"s3path: {s3path} for S3 range get not found")
-                raise HTTPNotFound()
-            # no data, return empty dictionary
-            chunk_rsp = {}
-        elif status_code != 200:
-            msg = f"lambda invoke to {lambda_function} failed with code: {status_code}"
-            log.error(msg)
-            raise HTTPInternalServerError()
+        async with lambdaInvoke(app, params) as rsp:
+            if not rsp or "StatusCode" not in rsp:
+                log.error(f"Unexpected rsp from lambdaInvoke: {rsp}")
+                raise HTTPInternalServerError()
+        
+            lambda_status = rsp["StatusCode"]
+
+            if lambda_status == 200:
+                body = rsp["Payload"]
+                payload = await body.read()
+                log.info(f"got rsp payload: {payload}")
+                payload_dict = json.loads(payload.decode("utf-8"))
+                if "statusCode" not in payload_dict:
+                    msg = f"expected to find statusCode in payload, but got: {payload_dict.keys()}"
+                    status_code= 500
+                else:
+                    status_code = payload_dict["statusCode"]
+
+                if status_code == 200:
+                    if "body" not in payload_dict:
+                        log.error("Expected body key in lambda response")
+                        raise HTTPInternalServerError()
+                    chunk_rsp = payload_dict["body"]
+            else:
+                status_code = lambda_status
+
+            if status_code == 404:
+                if "s3path" in params:
+                    s3path = params["s3path"]
+                    # external HDF5 file, should exist
+                    log.warn(f"s3path: {s3path} for S3 range get not found")
+                    raise HTTPNotFound()
+                # no data, return empty dictionary
+                chunk_rsp = {}
+            elif status_code != 200:
+                msg = f"lambda invoke for chunk query failed with code: {status_code}"
+                log.error(msg)
+                raise HTTPInternalServerError()
     else:
         # not serverless
         req = getDataNodeUrl(app, chunk_id)
@@ -1715,19 +1704,22 @@ async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None, server
     resp_index = []
     resp_value = []
     num_chunks = len(chunk_ids)
+    max_lambda_req = 100  # TBD - make config
+    log.info(f"doQueryRead with {num_chunks} chunks")
     # Get information about where chunks are located
     #   Will be None except for H5D_CHUNKED_REF_INDIRECT type
     chunk_map = await getChunkInfoMap(app, dset_id, dset_json, chunk_ids, bucket=bucket)
     log.debug(f"chunkinfo_map: {chunk_map}")
 
     while chunk_index < num_chunks:
-        next_chunks = []
-        for i in range(node_count):
-            next_chunks.append(chunk_ids[chunk_index])
-            chunk_index += 1
-            if chunk_index >= num_chunks:
-                break
-        log.debug(f"next chunk ids: {next_chunks}")
+        if num_chunks - chunk_index < max_lambda_req:
+            next_chunks = chunk_ids[chunk_index:]
+            chunk_index = num_chunks
+        else:
+            next_chunks = chunk_ids[chunk_index:(chunk_index+max_lambda_req)]
+            chunk_index += max_lambda_req
+        log.debug(f"doQueryRead - next batch of chunk ids: {next_chunks}")
+        #log.info*(f"doQueryRead - invoking lambda over {len(next_chunks)} chunks")
         # run query on DN nodes
         dn_rsp = {} # dictionary keyed by chunk_id
         for chunk_id in next_chunks:

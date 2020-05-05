@@ -22,7 +22,6 @@ else:
 	log_level = "DEBUG"
 
 def debug(msg):
-	print("log_level:", log_level)
 	if log_level == "DEBUG":
 		print("DEBUG> " + msg)
 	if app:

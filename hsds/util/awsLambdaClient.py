@@ -1,8 +1,15 @@
 from aiobotocore  import get_session
+#from asyncio import CancelledError
+
 import datetime
 import subprocess
 import json
+import time
 from aiobotocore.config import AioConfig
+#from aiohttp.web_exceptions import  HTTPInternalServerError
+#from aiohttp.client_exceptions import ClientError
+
+
 from .. import config
 from .. import hsds_logger as log
 
@@ -10,13 +17,9 @@ from .. import hsds_logger as log
 get aiobotocore lambda client
 """
 
-def getLambdaClient(app):
-    if "session" not in app:
-        session = get_session()
-        app["session"] = session
-    else:
-        session = app["session"]
-
+def getLambdaClient(app, session):
+       
+    """
     if "lambda" in app:
         if "lambda_token_expiration" in app:
             # check that our token is not about to expire
@@ -29,7 +32,7 @@ def getLambdaClient(app):
             log.info("Lambda access token has expired - renewing")
         else:
             return app["lambda"]
-
+    """
     # first time setup of s3 client or limited time token has expired
 
     aws_region = None
@@ -121,3 +124,98 @@ def getLambdaClient(app):
         config=aio_config)
     app["lambda"] = lambda_client
     return lambda_client
+
+"""
+Async invoke for lambda function
+"""
+class lambdaInvoke:
+    def __init__(self, app, params, timeout=10):
+        self.app = app
+        self.params = params
+        self.timeout = timeout
+        self.session = None
+        self.lambdaFunction = config.get("aws_lambda_chunkread_function")
+        self.client = None 
+
+        if "lambda_stats" not in app:
+            app["lambda_stats"] = {}
+        lambda_stats = app["lambda_stats"]
+        if self.lambdaFunction not in lambda_stats:
+            lambda_stats[self.lambdaFunction] = {"cnt": 0, "inflight": 0, "failed": 0}
+        self.funcStats = lambda_stats[self.lambdaFunction] 
+        
+
+    async def __aenter__(self):
+        start_time = time.time()
+        payload = json.dumps(self.params)
+        log.info(f"invoking lambda function {self.lambdaFunction} with payload: {self.params} start: {start_time}")
+        log.debug(f"Lambda function count: {self.funcStats['cnt']}")
+        self.funcStats["cnt"] += 1
+        self.funcStats["inflight"] += 1
+        self.session = get_session()
+
+        self.client = getLambdaClient(self.app, self.session)
+        
+        lambda_rsp = await self.client.invoke(FunctionName=self.lambdaFunction, Payload=payload) 
+        finish_time = time.time()
+        log.info(f"lambda.invoke({self.lambdaFunction} start={start_time:.4f} finish={finish_time:.4f} elapsed={finish_time-start_time:.4f}")
+        self.funcStats["inflight"] -= 1
+        log.info(f"lambda.invoke - {self.funcStats['inflight']} inflight requests")
+        return lambda_rsp
+
+
+    async def __aexit__(self, exc_type, exc, tb):
+        log.debug("lambdaInvoke - aexit")
+        if self.client:
+            await self.client.close()
+
+"""
+async def lambdaInvoke(app, params=None):
+    lambda_function = config.get("aws_lambda_chunkread_function")
+    if not lambda_function:
+        log.error("lambdaInvoke with no FunctionName")
+        raise ValueError()
+    if not params:
+        log.error("LambdaInvoke with no params")
+        raise ValueError()
+    if "lambda_stats" not in app:
+        app["lambda_stats"] = {}
+    lambda_stats = app["lambda_stats"]
+    if lambda_function not in lambda_stats:
+        lambda_stats[lambda_function] = {"cnt": 0, "inflight": 0, "failed": 0}
+    func_stats = lambda_stats[lambda_function]
+    func_stats["cnt"] += 1
+    func_stats["inflight"] += 1
+
+    payload = json.dumps(params)
+    lambda_rsp = None
+    start_time = time.time()
+    log.info(f"invoking lambda function {lambda_function} with payload: {params} start: {start_time}")
+    log.debug(f"Lambda function count: {func_stats['cnt']}")
+
+    try:
+        async with getLambdaClient(app) as client:
+            lambda_rsp = await client.invoke(FunctionName=lambda_function, Payload=payload) 
+            finish_time = time.time()
+            log.info(f"lambda.invoke({lambda_function} start={start_time:.4f} finish={finish_time:.4f} elapsed={finish_time-start_time:.4f}")
+            func_stats["inflight"] -= 1
+            log.info(f"lambda.invoke - {func_stats['inflight']} inflight requests")
+    except ClientError as ce:
+        log.error(f"Error for lambda invoke: {ce} ")
+        func_stats["inflight"] -= 1
+        func_stats["failed"] += 1
+        raise HTTPInternalServerError()
+    except CancelledError as cle:
+        log.warn(f"CancelledError for lambda invoke: {cle}")
+        func_stats["inflight"] -= 1
+        func_stats["failed"] += 1
+        raise HTTPInternalServerError()
+    except Exception as e:
+        log.error(f"Unexpected exception for lamdea invoke: {e}, type: {type(e)}")
+        func_stats["inflight"] -= 1
+        func_stats["failed"] += 1
+        raise HTTPInternalServerError()
+    log.info(f"got lambda response: {lambda_rsp}")
+    return lambda_rsp
+
+"""       
