@@ -200,55 +200,48 @@ async def read_chunk_hyperslab(app, chunk_id, dset_json, slices, np_arr, chunk_m
             # extra params for lambda function
             params["chunk_id"] = chunk_id
             params["dset_json"] = dset_json
-            start_time = time.time()
-            log.info(f"invoking lambda function {lambda_function} with payload: {params} start: {start_time}")
-            payload = json.dumps(params)
-            try:
-                rsp = await client.invoke(FunctionName=lambda_function, Payload=payload)
-                finish_time = time.time()
-                log.info(f"lambda.invoke({lambda_function} start={start_time:.4f} finish={finish_time:.4f} elapsed={finish_time-start_time:.4f}")
-            except ClientError as ce:
-                log.error(f"Error for lambda invoke: {ce} ")
-                raise HTTPInternalServerError()
-            except CancelledError as cle:
-                log.warn(f"CancelledError for lambda invoke: {cle}")
-                return
-            except Exception as e:
-                log.error(f"Unexpected exception for lamdea invoke: {e}, type: {type(e)}")
-                raise HTTPInternalServerError()
-            log.info(f"got lambda response: {rsp}")
 
-            lambda_status = rsp["StatusCode"]
-
-            if lambda_status == 200:
-                body = rsp["Payload"]
-                payload = await body.read()
-                log.info(f"got rsp payload: {payload}")
-                payload_dict = json.loads(payload.decode("utf-8"))
-                if "statusCode" not in payload_dict:
-                    msg = f"expected to find statusCode in payload, but got: {payload_dict.keys()}"
-                    status_code= 500
-                else:
+            async with lambdaInvoke(app, params) as rsp:
+                if not rsp or "StatusCode" not in rsp:
+                    log.error(f"Unexpected rsp from lambdaInvoke: {rsp}")
+                    raise HTTPInternalServerError()
+        
+                log.debug(f"got lambda response: {rsp}")    
+                lambda_status = rsp["StatusCode"]
+            
+                if lambda_status == 200:
+                    body = rsp["Payload"]
+                    payload = await body.read()
+                    log.info(f"got rsp payload: {payload}")
+                    payload_dict = json.loads(payload.decode("utf-8"))
+                    if "statusCode" not in payload_dict:
+                        msg = f"expected to find statusCode in payload, but got: {payload_dict.keys()}"
+                        log.error(msg)
+                        raise HTTPInternalServerError()
+                    
                     status_code = payload_dict["statusCode"]
+                    if status_code == 200:
+                        if "body" not in payload_dict:
+                            log.error("Expected body key in lambda response")
+                            raise HTTPInternalServerError()
+                        
+                        b64data = payload_dict["body"]
+                        array_data = base64.b64decode(b64data)
+                    else:
+                        status_code = lambda_status
 
-                if status_code == 200:
-                    b64data = payload_dict["body"]
-                    array_data = base64.b64decode(b64data)
-            else:
-                status_code = lambda_status
-
-            if status_code == 404:
-                if "s3path" in params:
-                    s3path = params["s3path"]
-                    # external HDF5 file, should exist
-                    log.warn(f"s3path: {s3path} for S3 range get not found")
-                    raise HTTPNotFound()
-                # no data, return zero array
-                chunk_arr = defaultChunk()
-            elif status_code != 200:
-                msg = f"lambda invoke to {lambda_function} failed with code: {status_code}"
-                log.error(msg)
-                raise HTTPInternalServerError()
+                if status_code == 404:
+                    if "s3path" in params:
+                        s3path = params["s3path"]
+                        # external HDF5 file, should exist
+                        log.warn(f"s3path: {s3path} for S3 range get not found")
+                        raise HTTPNotFound()
+                    # no data, return zero array
+                    chunk_arr = defaultChunk()
+                elif status_code != 200:
+                    msg = f"lambda invoke to {lambda_function} failed with code: {status_code}"
+                    log.error(msg)
+                    raise HTTPInternalServerError()
         else:
             req = getDataNodeUrl(app, chunk_id)
             req += "/chunks/" + chunk_id
