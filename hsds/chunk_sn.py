@@ -196,7 +196,6 @@ async def read_chunk_hyperslab(app, chunk_id, dset_json, slices, np_arr, chunk_m
 
         if serverless:
             lambda_function = config.get("aws_lambda_chunkread_function")
-            client = getLambdaClient(app)
             # extra params for lambda function
             params["chunk_id"] = chunk_id
             params["dset_json"] = dset_json
