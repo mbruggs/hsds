@@ -226,8 +226,8 @@ async def read_chunk_hyperslab(app, chunk_id, dset_json, slices, np_arr, chunk_m
                         
                         b64data = payload_dict["body"]
                         array_data = base64.b64decode(b64data)
-                    else:
-                        status_code = lambda_status
+                else:
+                    status_code = lambda_status
 
                 if status_code == 404:
                     if "s3path" in params:
@@ -235,7 +235,7 @@ async def read_chunk_hyperslab(app, chunk_id, dset_json, slices, np_arr, chunk_m
                         # external HDF5 file, should exist
                         log.warn(f"s3path: {s3path} for S3 range get not found")
                         raise HTTPNotFound()
-                    # no data, return zero array
+                    # no data, use zero array
                     chunk_arr = defaultChunk()
                 elif status_code != 200:
                     msg = f"lambda invoke to {lambda_function} failed with code: {status_code}"
@@ -284,6 +284,7 @@ async def read_chunk_hyperslab(app, chunk_id, dset_json, slices, np_arr, chunk_m
             log.error(f"Expected {nelements_expected} points, but got: {nelements_read}")
             raise HTTPInternalServerError()
         chunk_arr = chunk_arr.reshape(chunk_shape)
+
 
     log.info(f"chunk_arr shape: {chunk_arr.shape}")
     log.info(f"data_sel: {data_sel}")
