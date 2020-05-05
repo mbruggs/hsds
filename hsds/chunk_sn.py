@@ -1704,7 +1704,7 @@ async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None, server
     resp_index = []
     resp_value = []
     num_chunks = len(chunk_ids)
-    max_lambda_req = 100  # TBD - make config
+    max_lambda_invoke = config.get("aws_lambda_max_invoke")
     log.info(f"doQueryRead with {num_chunks} chunks")
     # Get information about where chunks are located
     #   Will be None except for H5D_CHUNKED_REF_INDIRECT type
@@ -1712,12 +1712,12 @@ async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None, server
     log.debug(f"chunkinfo_map: {chunk_map}")
 
     while chunk_index < num_chunks:
-        if num_chunks - chunk_index < max_lambda_req:
+        if num_chunks - chunk_index < max_lambda_invoke:
             next_chunks = chunk_ids[chunk_index:]
             chunk_index = num_chunks
         else:
-            next_chunks = chunk_ids[chunk_index:(chunk_index+max_lambda_req)]
-            chunk_index += max_lambda_req
+            next_chunks = chunk_ids[chunk_index:(chunk_index+max_lambda_invoke)]
+            chunk_index += max_lambda_invoke
         log.debug(f"doQueryRead - next batch of chunk ids: {next_chunks}")
         #log.info*(f"doQueryRead - invoking lambda over {len(next_chunks)} chunks")
         # run query on DN nodes
