@@ -59,4 +59,5 @@ openid_audience: null # OpenID audience. This is synonymous with azure_resource_
 openid_claims: unique_name,appid   # Comma seperated list of claims to resolve to usernames.
 chaos_die: 0           # if > 0, have nodes randomly die after n seconds (for testing)
 standalone_app: false   # True when run as a single application
+default_compressor: blosc  # use blosc or zlib
 

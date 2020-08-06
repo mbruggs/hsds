@@ -13,7 +13,7 @@
 # data node of hsds cluster
 #
 import asyncio
-
+from numcodecs import Blosc
 from aiohttp.web import run_app
 from . import config
 from .util.lruCache import LruCache
@@ -204,14 +204,19 @@ def create_app(loop):
     app['deleted_ids'] = set()
     app['dirty_ids'] = {}  # map of objids to timestamp and bucket of which they were last updated
     app['deflate_map'] = {} # map of dataset ids to deflate levels (if compressed)
-    app["shuffle_map"] = {} # map of dataset ids to shuffle items size (if shuffle filter is applied)
-    app["pending_s3_read"] = {} # map of s3key to timestamp for in-flight read requests
-    app["pending_s3_write"] = {} # map of s3key to timestamp for in-flight write requests
-    app["pending_s3_write_tasks"] = {} # map of objid to asyncio Task objects for writes
-    app["root_notify_ids"] = {}   # map of root_id to bucket name used for notify root of changes in domain
-    app["root_scan_ids"] = {}   # map of root_id to bucket name for pending root scans
-    app["gc_ids"] = set()       # set of root or dataset ids for deletion
-    app["objDelete_prefix"] = None  # used by async_lib removeKeys
+    app['shuffle_map'] = {} # map of dataset ids to shuffle items size (if shuffle filter is applied)
+    app['pending_s3_read'] = {} # map of s3key to timestamp for in-flight read requests
+    app['pending_s3_write'] = {} # map of s3key to timestamp for in-flight write requests
+    app['pending_s3_write_tasks'] = {} # map of objid to asyncio Task objects for writes
+    app['root_notify_ids'] = {}   # map of root_id to bucket name used for notify root of changes in domain
+    app['root_scan_ids'] = {}   # map of root_id to bucket name for pending root scans
+    app['gc_ids'] = set()       # set of root or dataset ids for deletion
+    app['objDelete_prefix'] = None  # used by async_lib removeKeys
+    if config.get("default_compressor") == "blosc":
+        log.info("insantiating blosc compressor")
+        app['compressor'] = Blosc()
+    else:
+        app['compressor'] = None
     # TODO - there's nothing to prevent the deflate_map from getting ever larger
     # (though it is only one int per dataset id)
     # add a timestamp and remove at a certain time?

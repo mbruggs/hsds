@@ -33,7 +33,7 @@ except ImportError:
     def FileClient(app):
         log.error("ImportError for FileClient")
         return None
-from .. import config
+#from .. import config
 
 @jit(nopython=True)
 def _doShuffle(src, des, element_size):
@@ -64,6 +64,12 @@ def _shuffle(element_size, chunk):
     if chunk_size % element_size != 0:
         raise ValueError("unexpected chunk size")
 
+    use_blosc = True
+    # if config.get("default_compressor") == "blosc":
+    if use_blosc:
+        blosc = Blosc()
+        cdata = blosc.compress(chunk, b'zlib', 5)
+        return cdata
     arr = np.zeros((chunk_size,), dtype='u1')
     _doShuffle(chunk, arr, element_size)
 
@@ -75,10 +81,19 @@ def _unshuffle(element_size, chunk):
     chunk_size = len(chunk)
     if chunk_size % element_size != 0:
         raise ValueError("unexpected chunk size")
-    arr = np.zeros((chunk_size,), dtype='u1')
-    _doUnshuffle(chunk, arr, element_size)
 
-    return arr.tobytes()
+
+    arr = np.zeros((chunk_size,), dtype='u1')
+
+    blosc = Blosc()
+
+    # if config.get("default_compressor") == "blosc":
+    if blosc.cbuffer_sizes(chunk) == (0,0,0):
+        _doUnshuffle(chunk, arr, element_size)
+        return arr.tobytes()
+    else:
+        out = blosc.decompress(chunk)
+        return out    
 
 def _getStorageClient(app):
     """ get storage client s3 or azure blob
