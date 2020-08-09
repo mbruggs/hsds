@@ -10,6 +10,7 @@
 # request a copy from help@hdfgroup.org.                                     #
 ##############################################################################
 import numpy
+import time
 from .. import hsds_logger as log
 
 def getArraySize(arr):
@@ -27,13 +28,14 @@ class Node(object):
         self._isdirty = isdirty
         self._prev = prev
         self._next = next
+        self._last_access = time.time()
 
 
 
 class LruCache(object):
     """ LRU cache for Numpy arrays that are read/written from S3
     """
-    def __init__(self, mem_target=32*1024*1024, chunk_cache=True):
+    def __init__(self, mem_target=32*1024*1024, chunk_cache=True, expire_time=None):
         self._hash = {}
         self._lru_head = None
         self._lru_tail = None
@@ -41,21 +43,20 @@ class LruCache(object):
         self._dirty_size = 0
         self._mem_target = mem_target
         self._chunk_cache = chunk_cache
+        self._expire_time = expire_time
         if chunk_cache:
             self._name = "ChunkCache"
         else:
             self._name = "MetaCache"
         self._dirty_set = set()
 
-    def _getNode(self, key):
-        """ Return node  """
-        if key not in self._hash:
-            raise KeyError(key)
-        return self._hash[key]
+
 
     def _delNode(self, key):
         # remove from LRU
-        node = self._getNode(key)
+        if key not in self._hash:
+            raise KeyError(key)
+        node = self._hash[key]
         prev = node._prev
         next_node = node._next
         if prev is None:
@@ -76,7 +77,9 @@ class LruCache(object):
 
     def _moveToFront(self, key):
         # move this node to the front of LRU list
-        node = self._getNode(key)
+        if key not in self._hash:
+            raise KeyError(key)
+        node = self._hash[key]
         if self._lru_head == node:
             # already the front
             return node
@@ -95,8 +98,24 @@ class LruCache(object):
                 raise KeyError("unexpected error")
             self._lru_tail = prev
         self._lru_head = node
-        log.debug(f"LRU {self._name} new headnode: {node._id}")
         return node
+
+    def _hasKey(self, key, ignore_expire=False):
+        """ check if key is present node  """
+        if key not in self._hash:
+            return False
+        if ignore_expire:
+            return True
+        node = self._hash[key]
+        now = time.time()
+        if self._expire_time:   
+            if (now - node._last_access) > self._expire_time and not node._isdirty:
+                log.debug(f"LRU {self._name} node {key} has been in cache for {now - node._last_access:.3f} seconds, expiring")
+                return False
+            else:
+                return True
+        else:
+            return True
 
     def __delitem__(self, key):
         node = self._delNode(key) # remove from LRU
@@ -122,15 +141,14 @@ class LruCache(object):
 
     def __contains__(self, key):
         """ Test if key is in the cache """
-        if key in self._hash:
-            return True
-        else:
-            return False
+        return self._hasKey(key)
 
     def __getitem__(self, key):
         """ Return numpy array from cache """
         # doing a getitem has the side effect of moving this node
         # up in the LRU list
+        if not self._hasKey(key):
+            raise KeyError(key)
         node = self._moveToFront(key)
         return node._data
 
@@ -161,6 +179,7 @@ class LruCache(object):
             self._moveToFront(key)
             if node._isdirty:
                 self._dirty_size += mem_delta
+            node._last_access = time.time()
             log.debug(f"LRU {self._name} updated node: {key} [was {old_size} bytes now {node._mem_size} bytes]")
         else:
             node = Node(key, data, mem_size=mem_size)
