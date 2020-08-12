@@ -19,7 +19,6 @@ install:
   - python setup.py install
   - pip install requests
   - pip install pyflakes
-  - pip install numcodecs
   - pyflakes hsds/*.py
   - pyflakes hsds/util/*.py
   - docker build -t hdfgroup/hsds .
@@ -31,4 +30,4 @@ script:
   - mkdir $ROOT_DIR
   - mkdir ${HOME}/buckets/hsds.test
   - ./runall.sh
-  - python testall.py
+  - python testall.py --skip_unit
