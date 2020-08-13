@@ -62,8 +62,7 @@ class SetupTest(unittest.TestCase):
         
         # self.assertEqual(rsp.status_code, 200)
         print("got status code:", rsp.status_code)
-        req = endpoint + "/about"
-        rsp = requests.get(req)
+        rsp = requests.get(req + "about")
         self.assertEqual(rsp.status_code, 200)
         self.assertEqual(rsp.headers["Content-Type"], "application/json; charset=utf-8")
 
