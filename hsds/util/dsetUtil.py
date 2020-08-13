@@ -32,6 +32,8 @@ Format is:
 FILTER_DEFS = (
     ('H5Z_FILTER_NONE', 0, "none"),
     ('H5Z_FILTER_DEFLATE', 1, "deflate"),
+    ('H5Z_FILTER_DEFLATE', 1, "zlib"),  # alternate name for H5Z_FILTER_DEFLATE
+    ('H5Z_FILTER_DEFLATE', 1, "gzip"),  # alternate name for H5Z_FILTER_DEFLATE
     ('H5Z_FILTER_SHUFFLE', 2, "shuffle"),
     ('H5Z_FILTER_FLETCHER32', 3, "fletcher32"),
     ('H5Z_FILTER_SZIP', 4, "szip"),
@@ -41,6 +43,7 @@ FILTER_DEFS = (
     ('H5Z_FILTER_BLOSC', 32001, "blosclz"),
     ('H5Z_FILTER_SNAPPY', 32003, "snappy"),
     ('H5Z_FILTER_LZ4', 32004, "lz4"),
+    ('H5Z_FILTER_LZ4HC', 32005, "lz4hc"),
     ('H5Z_FILTER_ZSTD', 32015, "zstd")
 )
 
@@ -436,8 +439,6 @@ def getFilterOps(app, dset_json, item_size):
             if 'use_shuffle' not in filter_ops:
                 # for HDF5-style compression, use shuffle only if it turned on
                 filter_ops['use_shuffle'] = False
-        elif filterClass.lower() == 'default':
-            compressor = app['default_compressor']
         elif filterClass.lower() in blosc.list_compressors():
             compressor = filterClass.lower()
         elif filterClass == "H5Z_FILTER_SHUFFLE":

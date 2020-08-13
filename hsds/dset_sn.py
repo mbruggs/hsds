@@ -943,9 +943,6 @@ async def POST_Dataset(request):
 
             f_out = []
             for filter in f_in:
-                if isinstance(filter, str) and filter == "default":
-                    item = getFilterItem(config.get("default_compressor"))
-                    f_out.append(item)
                 if isinstance(filter, int) or isinstance(filter, str):
                     item = getFilterItem(filter)
                     if not item:
