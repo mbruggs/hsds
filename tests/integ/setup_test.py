@@ -60,8 +60,9 @@ class SetupTest(unittest.TestCase):
             print(f"Authorization failure, verify password for {user_name} and set env variable for USER_PASSWORD")
             self.assertTrue(False)
         
-        # self.assertEqual(rsp.status_code, 200)
+        # 
         print("got status code:", rsp.status_code)
+        self.assertEqual(rsp.status_code, 200)
         
         rspJson = json.loads(rsp.text)
         print("home folder json:", rspJson)
