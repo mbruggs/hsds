@@ -31,3 +31,4 @@ script:
   - mkdir ${HOME}/buckets/hsds.test
   - ./runall.sh
   - python testall.py --skip_unit
+  - docker logs hsds_sn_1
