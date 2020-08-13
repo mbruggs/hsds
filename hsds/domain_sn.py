@@ -998,7 +998,7 @@ async def PUT_Domain(request):
     # domain creation successful
     # mixin limits
     domain_json["limits"] = getLimits()
-    # domain_json["compressors"] = getCompressors()
+    domain_json["compressors"] = getCompressors()
     domain_json["version"] = getVersion()
     resp = await jsonResponse(request, domain_json, status=201)
     log.response(request, resp=resp)
