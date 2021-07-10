@@ -1440,6 +1440,7 @@ class ValueTest(unittest.TestCase):
         domain = helper.getTestDomain("tall.h5")
         print("testGetDomain", domain)
         headers = helper.getRequestHeaders(domain=domain)
+        headers["Origin"] = "https://www.hdfgroup.org"  # test CORS
 
         # verify domain exists
         req = helper.getEndpoint() + '/'
