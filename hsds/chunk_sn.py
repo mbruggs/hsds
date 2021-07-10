@@ -1917,11 +1917,10 @@ async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
             await resp.prepare(request)
             log.debug("write request")
             await resp.write(output_data)
-        except Exception as e:
-            log.error(f"Exception during binary data write: {e}")
-        finally:
             log.debug("write_eof")
             await resp.write_eof()
+        except Exception as e:
+            log.error(f"Exception during binary data write: {e}")
 
     else:
         log.debug("GET Value - returning JSON data")
@@ -2109,10 +2108,9 @@ async def POST_Value(request):
             resp.content_length = len(output_data)
             await resp.prepare(request)
             await resp.write(output_data)
+            await resp.write_eof()
         except Exception as e:
             log.error(f"Exception during binary data write: {e}")
-        finally:
-            await resp.write_eof()
     else:
         log.debug("POST Value - returning JSON data")
         rsp_json = {}
