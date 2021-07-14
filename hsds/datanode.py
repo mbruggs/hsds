@@ -15,14 +15,13 @@
 import asyncio
 import time
 import numcodecs as codecs
-import socket
-import os
 from aiohttp.web import run_app
 
 from . import config
 from .util.lruCache import LruCache
 from .util.idUtil import isValidUuid, isSchema2Id, getCollectionForId
 from .util.idUtil import isRootObjId
+from .util.httpUtil import isUnixDomainUrl, bindToSocket, getPortFromUrl
 from .basenode import healthCheck, baseInit, preStop
 # from .util.httpUtil import release_http_client
 from . import hsds_logger as log
@@ -315,26 +314,39 @@ def main():
     app = create_app()
 
     # run app using either socket or tcp
-    dn_socket = config.getCmdLineArg("dn_socket")
-    if dn_socket:
-        # use a unix domain socket path
-        # first, make sure the socket does not already exist
-        log.info(f"Using socket {dn_socket}")
+    
+    if app["dn_urls"] and app["node_number"] >= 0:
+        dn_urls = app["dn_urls"]
+        node_number = app["node_number"]
+        dn_url = dn_urls[node_number]
+        dn_port = getPortFromUrl(dn_url)
+    else:
+        dn_port = int(config.get("dn_port"))
+        dn_url = f"http://localhost:{dn_port}"
+
+    if isUnixDomainUrl(dn_url):
         try:
-            os.unlink(dn_socket)
-        except OSError:
-            if os.path.exists(dn_socket):
-                raise
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.bind(dn_socket)
-        run_app(app, sock=s)
+            s = bindToSocket(dn_url)
+        except OSError as oe:
+            log.error(f"unable to find to socket: {oe}")
+            raise
+        except ValueError as ve:
+            log.error(f"unable to find to socket: {ve}")
+            raise
+        try:
+            run_app(app, sock=s, handle_signals=True)
+        except KeyboardInterrupt:
+            log.info("got keyboard interrupt")
+        except SystemExit:
+            log.info("got system exit")
+        except Exception as e:
+            log.error(f"got exception: {e}")
         log.info("run_app done")
         # close socket?
     else:
         # Use TCP connection
-        port = int(config.get("dn_port"))
-        log.info(f"run_app on port: {port}")
-        run_app(app, port=port)
+        log.info(f"run_app on port: {dn_port}")
+        run_app(app, port=dn_port)
 
     log.info("datanode exiting")
 

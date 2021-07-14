@@ -13,12 +13,10 @@
 # service node of hsds cluster
 #
 import asyncio
-import os
-import socket
-
 from aiohttp.web import run_app
 import aiohttp_cors
 from .util.lruCache import LruCache
+from .util.httpUtil import isUnixDomainUrl, bindToSocket, getPortFromUrl
 
 from . import config
 from .basenode import healthCheck,  baseInit
@@ -214,35 +212,41 @@ def main():
     app = create_app()
 
     # run app using either socket or tcp
-    sn_socket = config.getCmdLineArg("sn_socket")
-    if sn_socket:
-        # use a unix domain socket path
-        # first, make sure the socket does not already exist
-        log.info(f"Using socket {sn_socket}")
+    sn_url = config.getCmdLineArg("sn_url")
+    if sn_url:
+        sn_port = getPortFromUrl(sn_url)
+    else:
+        # create TCP url based on port address
+        sn_port = int(config.get("sn_port"))
+        sn_url = f"http://localhost:{sn_port}"
+
+    print("sn_url:", sn_url)
+    print("sn_port:", sn_port)
+
+    if isUnixDomainUrl(sn_url):
+        print("binding to socket:", sn_url)
         try:
-            os.unlink(sn_socket)
-        except OSError:
-            if os.path.exists(sn_socket):
-                raise
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.bind(sn_socket)
+            s = bindToSocket(sn_url)
+        except OSError as oe:
+            log.error(f"unable to find to socket: {oe}")
+            raise
+        except ValueError as ve:
+            log.error(f"unable to find to socket: {ve}")
+            raise
         try:
             run_app(app, sock=s, handle_signals=True)
         except KeyboardInterrupt:
-            print("got keyboard interrupt")
+            log.info("got keyboard interrupt")
         except SystemExit:
-            print("got system exit")
+            log.info("got system exit")
         except Exception as e:
-            print(f"got exception: {e}s")
-            # loop = asyncio.get_event_loop()
-            # loop.run_until_complete(release_http_client(app))
+            log.error(f"got exception: {e}")
         log.info("run_app done")
         # close socket?
     else:
         # Use TCP connection
-        port = int(config.get("sn_port"))
-        log.info(f"run_app on port: {port}")
-        run_app(app, port=port)
+        log.info(f"run_app on port: {sn_port}")
+        run_app(app, port=sn_port)
 
     log.info("Service node exiting")
 
