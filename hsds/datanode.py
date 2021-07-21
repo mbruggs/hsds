@@ -318,6 +318,11 @@ def main():
     if app["dn_urls"] and app["node_number"] >= 0:
         dn_urls = app["dn_urls"]
         node_number = app["node_number"]
+        if node_number >= len(dn_urls):
+            msg = f"Invalid node_number: {node_number} "
+            msg += f"must be less than {len(dn_urls)}"
+            msg += f" dn_urls: {dn_urls}"
+            raise ValueError(msg)
         dn_url = dn_urls[node_number]
         dn_port = getPortFromUrl(dn_url)
     else:

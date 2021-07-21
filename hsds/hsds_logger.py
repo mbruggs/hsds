@@ -13,6 +13,7 @@
 # Simple looger for hsds
 #
 import asyncio
+import time
 from aiohttp.web_exceptions import HTTPServiceUnavailable
 from .util.domainUtil import getDomainFromRequest
 
@@ -86,6 +87,7 @@ def request(req):
         debug(f"num tasks: {num_tasks} active tasks: {active_tasks}")
 
     max_task_count = app["max_task_count"]
+    # app["last_request_time"] = int(time.time())
     if app["node_type"] == "sn":
         if max_task_count and active_tasks > max_task_count:
             warning(f"more than {max_task_count} tasks, returning 503")

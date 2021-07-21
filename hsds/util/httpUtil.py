@@ -81,10 +81,10 @@ def isUnixDomainUrl(url):
     if not url:
         raise ValueError("url undefined")
     if not url.startswith("http"):
-        raise ValueError(f"invalid url: {url}")
+        raise ValueError(f"invalid url, no http: {url}")
     if url.startswith("http+unix:"):
         if not url.startswith("http+unix://"):
-            raise ValueError(f"invalid url: {url}")   
+            raise ValueError(f"invalid socket url: {url}")   
         return True
     else:
         return False

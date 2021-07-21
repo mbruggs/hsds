@@ -151,7 +151,7 @@ async def init():
 
 async def start_background_tasks(app):
     if "is_standalone" in app:
-        return  # don't need health check
+       return  # don't need health check
     loop = asyncio.get_event_loop()
     loop.create_task(healthCheck(app))
 

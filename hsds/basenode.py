@@ -542,7 +542,6 @@ async def info(request):
     log.response(request, resp=resp)
     return resp
 
-
 def baseInit(node_type):
     """Intitialize application and return app object"""
 
@@ -604,7 +603,7 @@ def baseInit(node_type):
     app["dn_ids"] = []  # node ids for each dn_url
      
     if is_standalone:
-        dn_urls_arg = config.getCmdLineArg("dn_urls")            
+        dn_urls_arg = config.getCmdLineArg("dn_urls")  
         if dn_urls_arg:
             dn_urls = dn_urls_arg.split(',')
             dn_urls.sort()
@@ -717,5 +716,6 @@ def baseInit(node_type):
         app['node_state'] = "READY"
     else:
         app["custer_state"] = "WAITING"
+
 
     return app
