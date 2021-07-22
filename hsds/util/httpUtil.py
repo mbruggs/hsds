@@ -234,7 +234,7 @@ async def http_get(app, url, params=None):
     url = get_http_std_url(url)
     status_code = None
     timeout = config.get("timeout")
-    # TBD: usse read_bufsize parameter to optimize read for large responses
+    # TBD: use read_bufsize parameter to optimize read for large responses
     try:
         async with client.get(url, params=params, timeout=timeout) as rsp:
             log.info(f"http_get status: {rsp.status} for req: {url}")
@@ -342,11 +342,10 @@ async def http_put(app, url, data=None, params=None):
     client = get_http_client(app, url=url)
     url = get_http_std_url(url)
     if isinstance(data, bytes):
-        log.debug("setting http_post for binary")
+        log.debug("setting http_put for binary")
         kwargs = {"data": data}
     else:
         kwargs = {"json": data}
-    log.debug(f"kwargs: {kwargs}")
 
     rsp_json = None
     if params is not None:
@@ -408,7 +407,7 @@ async def http_delete(app, url, data=None, params=None):
         async with client.delete(url, **kwargs) as rsp:
             log.info(f"http_delete status: {rsp.status}")
             if rsp.status == 200:
-                pass  # expectred
+                pass  # expected
             elif rsp.status == 404:
                 log.info(f"NotFound response for DELETE for url: {url}")
             elif rsp.status == 503:
