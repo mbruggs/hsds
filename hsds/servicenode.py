@@ -13,10 +13,12 @@
 # service node of hsds cluster
 #
 import asyncio
+import signal
 from aiohttp.web import run_app
 import aiohttp_cors
 from .util.lruCache import LruCache
 from .util.httpUtil import isUnixDomainUrl, bindToSocket, getPortFromUrl
+from .util.httpUtil import release_http_client
 
 from . import config
 from .basenode import healthCheck,  baseInit
@@ -155,6 +157,10 @@ async def start_background_tasks(app):
     loop = asyncio.get_event_loop()
     loop.create_task(healthCheck(app))
 
+async def on_shutdown(app):
+    """ Release any held resources """
+    log.info("on_shutdown")
+    await release_http_client(app)
 
 def create_app():
     """Create servicenode aiohttp application
@@ -200,6 +206,7 @@ def create_app():
         setPassword(app, hs_username, hs_password)
 
     app.on_startup.append(start_background_tasks)
+    app.on_shutdown.append(on_shutdown)
 
     return app
 

@@ -22,6 +22,7 @@ from .util.lruCache import LruCache
 from .util.idUtil import isValidUuid, isSchema2Id, getCollectionForId
 from .util.idUtil import isRootObjId
 from .util.httpUtil import isUnixDomainUrl, bindToSocket, getPortFromUrl
+from .util.httpUtil import release_http_client
 from .basenode import healthCheck, baseInit, preStop
 # from .util.httpUtil import release_http_client
 from . import hsds_logger as log
@@ -234,6 +235,11 @@ async def start_background_tasks(app):
         # run root/dataset GC
         loop.create_task(bucketGC(app))
 
+async def on_shutdown(app):
+    """ Release any held resources """
+    log.info("on_shutdown")
+    await release_http_client(app)
+
 
 def create_app():
     """Create datanode aiohttp application
@@ -301,6 +307,7 @@ def create_app():
 
     # run background tasks
     app.on_startup.append(start_background_tasks)
+    app.on_shutdown.append(on_shutdown)
 
     return app
 
