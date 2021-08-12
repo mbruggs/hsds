@@ -42,7 +42,7 @@ from .util.chunkUtil import getChunkCoverage, getDataCoverage
 from .util.chunkUtil import getChunkIdForPartition
 from .util.arrayUtil import bytesArrayToList, jsonToArray, getShapeDims
 from .util.arrayUtil import getNumElements, arrayToBytes, bytesToArray
-from .util.arrayUtil import squeezeArray
+from .util.arrayUtil import squeezeArray, getSharedMem
 from .util.authUtil import getUserPasswordFromRequest, validateUserPassword
 from .util.awsLambdaClient import getLambdaClient, lambdaInvoke
 from .servicenode_lib import getObjectJson, validateAction
@@ -1631,6 +1631,10 @@ async def GET_Value(request):
     rank = len(dims)
     layout = getChunkLayout(dset_json)
     log.debug(f"chunk layout: {layout}")
+    if "use_shared_mem" in params and params["use_shared_mem"]:
+        use_shm = True
+    else:
+        use_shm = False
 
     await validateAction(app, domain, dset_id, username, "read")
 
@@ -1740,7 +1744,8 @@ async def GET_Value(request):
                                          slices,
                                          chunk_map=chunkinfo,
                                          bucket=bucket,
-                                         serverless=serverless)
+                                         serverless=serverless,
+                                         use_shm=use_shm)
         except CancelledError as ce:
             log.warn(f"Cancelled error on hyperslab read: {ce}")
             # TBD: what do return if client cancels
@@ -1837,7 +1842,7 @@ async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None,
 
 
 async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
-                          chunk_map=None, bucket=None, serverless=False):
+                          chunk_map=None, bucket=None, serverless=False, use_shm=False):
     """ hyperslab read utility function """
     app = request.app
     loop = asyncio.get_event_loop()
@@ -1850,7 +1855,10 @@ async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
         log.debug(f"   {k}: {v}")
 
     accept_type = getAcceptType(request)
-    response_type = accept_type    # will adjust later if binary not possible
+    if accept_type == "binary" and use_shm:
+        response_type = "shared_mem" # only use shared memory for binary transfers
+    else:
+        response_type = accept_type  # use JSON or binary per accept value 
 
     type_json = dset_json["type"]
     item_size = getItemSize(type_json)
@@ -1892,7 +1900,16 @@ async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
 
     log.info(f"read_chunk_hyperslab gather complete, arr shape: {arr.shape}")
 
-    if response_type == "binary":
+    if response_type == "shared_mem":
+        shm, num_bytes = getSharedMem(app, arr)
+        log.debug(f"created shared memory - name: {shm.name}, num_bytes: {num_bytes}")
+        log.debug("GET Value - returning JSON data with shared memory buffer")
+        params = request.rel_url.query
+        resp_json = {"shm_name": shm.name, "num_bytes": num_bytes}
+        resp_json["hrefs"] = get_hrefs(request, dset_json)
+        resp = await jsonResponse(request, resp_json)
+        
+    elif response_type == "binary":
         log.debug("preparing binary response")
         output_data = arrayToBytes(arr)
         log.debug(f"got {len(output_data)} bytes for resp")
@@ -1920,7 +1937,7 @@ async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
             log.debug("write_eof")
             await resp.write_eof()
         except Exception as e:
-            log.error(f"Exception during binary data write: {e}")
+            log.error(f"{type(e)} Exception during binary data write: {e}")
 
     else:
         log.debug("GET Value - returning JSON data")

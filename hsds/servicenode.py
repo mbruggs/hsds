@@ -13,12 +13,13 @@
 # service node of hsds cluster
 #
 import asyncio
-import signal
+from collections import deque
 from aiohttp.web import run_app
 import aiohttp_cors
 from .util.lruCache import LruCache
 from .util.httpUtil import isUnixDomainUrl, bindToSocket, getPortFromUrl
 from .util.httpUtil import release_http_client
+from .util.arrayUtil import free_shm_blocks
 
 from . import config
 from .basenode import healthCheck,  baseInit
@@ -175,9 +176,10 @@ def create_app():
     log.info(msg)
     kwargs = {"mem_target": metadata_mem_cache_size}
     kwargs["name"] = "MetaCache"
-    app['meta_cache'] = LruCache(**kwargs)
+    app["meta_cache"] = LruCache(**kwargs)
     kwargs["name"] = "DomainCache"
     app['domain_cache'] = LruCache(**kwargs)
+    app["shm_blocks"] =  deque()  # store (timestamp, shm_name) tuples
 
     if config.get("allow_noauth"):
         allow_noauth = config.get("allow_noauth")
@@ -255,6 +257,8 @@ def main():
         log.info(f"run_app on port: {sn_port}")
         run_app(app, port=sn_port)
 
+    free_shm_blocks(app, age=0)
+    
     log.info("Service node exiting")
 
 

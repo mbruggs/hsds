@@ -10,6 +10,7 @@
 # request a copy from help@hdfgroup.org.                                     #
 ##############################################################################
 import unittest
+from multiprocessing import shared_memory
 import json
 import numpy as np
 import helper
@@ -1441,6 +1442,8 @@ class ValueTest(unittest.TestCase):
         print("testGetDomain", domain)
         headers = helper.getRequestHeaders(domain=domain)
         headers["Origin"] = "https://www.hdfgroup.org"  # test CORS
+        headers_bin_rsp = helper.getRequestHeaders(domain=domain)
+        headers_bin_rsp["accept"] = "application/octet-stream"
 
         # verify domain exists
         req = helper.getEndpoint() + '/'
@@ -1470,6 +1473,53 @@ class ValueTest(unittest.TestCase):
             row = data[j]
             for i in range(10):
                 self.assertEqual(row[i], i*j)
+
+        # read all the dataset values as binary
+        
+        rsp = self.session.get(req, headers=headers_bin_rsp)
+        self.assertEqual(rsp.status_code, 200)
+        self.assertEqual(rsp.headers['Content-Type'], "application/octet-stream")
+        data = rsp.content
+        self.assertEqual(len(data), 400)  # 10x10 4 byte array
+        for j in range(10):
+            for i in range(10):
+                offset = (j*10 + i)*4
+                self.assertEqual(data[offset], 0)
+                self.assertEqual(data[offset+1], 0)
+                self.assertEqual(data[offset+2], 0)
+                self.assertEqual(data[offset+3], i*j)
+
+        # read all the dataset values using shared memory
+        params = {"use_shared_mem": 1}
+        rsp = self.session.get(req, params=params, headers=headers_bin_rsp)
+        self.assertEqual(rsp.status_code, 200)
+        rspJson = json.loads(rsp.text)
+        self.assertTrue("shm_name" in rspJson)
+        shm_name = rspJson["shm_name"]
+        self.assertTrue("num_bytes" in rspJson)
+        num_bytes = rspJson["num_bytes"]
+        self.assertEqual(num_bytes, 400)
+        
+        shm = shared_memory.SharedMemory(name=shm_name)
+        self.assertTrue(len(shm.buf) >= 400)
+        data = shm.buf
+        for j in range(10):
+            for i in range(10):
+                offset = (j*10 + i)*4
+                self.assertEqual(data[offset], 0)
+                self.assertEqual(data[offset+1], 0)
+                self.assertEqual(data[offset+2], 0)
+                self.assertEqual(data[offset+3], i*j)
+        print(f"closing {shm_name}")
+        shm.close()
+        #print(f"unlinking {shm_name}")
+        #shm.unlink()
+    
+        
+
+         
+        
+
 
         # read 4x4 block from dataset
         params = {"select": "[0:4, 0:4]"}
