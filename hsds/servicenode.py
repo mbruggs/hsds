@@ -19,7 +19,6 @@ import aiohttp_cors
 from .util.lruCache import LruCache
 from .util.httpUtil import isUnixDomainUrl, bindToSocket, getPortFromUrl
 from .util.httpUtil import release_http_client
-from .util.arrayUtil import free_shm_blocks
 
 from . import config
 from .basenode import healthCheck,  baseInit
@@ -256,8 +255,6 @@ def main():
         # Use TCP connection
         log.info(f"run_app on port: {sn_port}")
         run_app(app, port=sn_port)
-
-    free_shm_blocks(app, age=0)
     
     log.info("Service node exiting")
 

@@ -17,6 +17,7 @@ import asyncio
 import json
 from socket import MSG_DONTWAIT
 import time
+from multiprocessing import shared_memory
 from asyncio import CancelledError
 import base64
 import numpy as np
@@ -42,7 +43,7 @@ from .util.chunkUtil import getChunkCoverage, getDataCoverage
 from .util.chunkUtil import getChunkIdForPartition
 from .util.arrayUtil import bytesArrayToList, jsonToArray, getShapeDims
 from .util.arrayUtil import getNumElements, arrayToBytes, bytesToArray
-from .util.arrayUtil import squeezeArray, getSharedMem
+from .util.arrayUtil import squeezeArray
 from .util.authUtil import getUserPasswordFromRequest, validateUserPassword
 from .util.awsLambdaClient import getLambdaClient, lambdaInvoke
 from .servicenode_lib import getObjectJson, validateAction
@@ -1631,10 +1632,10 @@ async def GET_Value(request):
     rank = len(dims)
     layout = getChunkLayout(dset_json)
     log.debug(f"chunk layout: {layout}")
-    if "use_shared_mem" in params and params["use_shared_mem"]:
-        use_shm = True
+    if "shm_name" in params and params["shm_name"]:
+        shm_name = params["shm_name"]
     else:
-        use_shm = False
+        shm_name = None
 
     await validateAction(app, domain, dset_id, username, "read")
 
@@ -1745,7 +1746,7 @@ async def GET_Value(request):
                                          chunk_map=chunkinfo,
                                          bucket=bucket,
                                          serverless=serverless,
-                                         use_shm=use_shm)
+                                         shm_name=shm_name)
         except CancelledError as ce:
             log.warn(f"Cancelled error on hyperslab read: {ce}")
             # TBD: what do return if client cancels
@@ -1842,7 +1843,7 @@ async def doQueryRead(request, chunk_ids, dset_json, slices, bucket=None,
 
 
 async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
-                          chunk_map=None, bucket=None, serverless=False, use_shm=False):
+                          chunk_map=None, bucket=None, serverless=False, shm_name=None):
     """ hyperslab read utility function """
     app = request.app
     loop = asyncio.get_event_loop()
@@ -1855,11 +1856,7 @@ async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
         log.debug(f"   {k}: {v}")
 
     accept_type = getAcceptType(request)
-    if accept_type == "binary" and use_shm:
-        response_type = "shared_mem" # only use shared memory for binary transfers
-    else:
-        response_type = accept_type  # use JSON or binary per accept value 
-
+    
     type_json = dset_json["type"]
     item_size = getItemSize(type_json)
     log.debug(f"item size: {item_size}")
@@ -1882,6 +1879,8 @@ async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
         log.warn(msg)
         raise HTTPRequestEntityTooLarge(request_size, max_request_size)
 
+    response_type = accept_type  # use JSON or binary per accept value
+    
     arr = np.zeros(np_shape, dtype=dset_dtype, order='C')
     tasks = []
     kwargs = {"chunk_map": chunk_map,
@@ -1900,16 +1899,43 @@ async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
 
     log.info(f"read_chunk_hyperslab gather complete, arr shape: {arr.shape}")
 
-    if response_type == "shared_mem":
-        shm, num_bytes = getSharedMem(app, arr)
-        log.debug(f"created shared memory - name: {shm.name}, num_bytes: {num_bytes}")
+    if shm_name:
+        log.debug(f"attaching to shared memory block: {shm_name}")
+        try:
+            shm = shared_memory.SharedMemory(name=shm_name)
+        except FileNotFoundError:
+            msg = f"no shared memory block with name: {shm_name} found"
+            log.warning(msg)
+            raise HTTPBadRequest(reason=msg)
+        except OSError as oe:
+            msg = f"Unexpected OSError: {oe.errno} attaching to shared memory block"
+            log.error(msg)
+            raise HTTPInternalServerError()
+        buffer = arrayToBytes(arr)
+        num_bytes = len(buffer)
+        if shm.size < num_bytes:
+            msg = f"unable to copy {num_bytes} to shared memory block of size: {shm.size}"
+            log.warning(msg)
+            raise HTTPRequestEntityTooLarge(num_bytes, shm.size)
+
+        # copy array data
+        shm.buf[:num_bytes] = buffer[:]
+        log.debug(f"copied {num_bytes} array data to shared memory name: {shm_name}")
+
+        # close shared memory block
+        # Note - since we are not calling shm.unlink (expecting the 
+        # client to do that), it's likely the resource tracker will complain on
+        # app exit.  This should be fixed in Python 3.9.  See: 
+        # https://bugs.python.org/issue39959
+        shm.close()
+
         log.debug("GET Value - returning JSON data with shared memory buffer")
-        params = request.rel_url.query
         resp_json = {"shm_name": shm.name, "num_bytes": num_bytes}
         resp_json["hrefs"] = get_hrefs(request, dset_json)
         resp = await jsonResponse(request, resp_json)
+        return resp
         
-    elif response_type == "binary":
+    if response_type == "binary":
         log.debug("preparing binary response")
         output_data = arrayToBytes(arr)
         log.debug(f"got {len(output_data)} bytes for resp")

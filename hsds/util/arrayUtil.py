@@ -10,8 +10,6 @@
 # request a copy from help@hdfgroup.org.                                     #
 ##############################################################################
 
-import time
-from multiprocessing import shared_memory
 import numpy as np
 
 MAX_VLEN_ELEMENT = 1000000  # restrict largest vlen element to one million
@@ -530,55 +528,3 @@ def squeezeArray(data):
     if can_reduce:
         data = data.squeeze()
     return data
-
-
-def free_shm_blocks(app, age=2.0):
-    """ Unlink any shared memory blocks whose create time is older than
-      age seconds ago """
-
-    if "shm_blocks" not in app:
-        return
-    q = app["shm_blocks"]
-    now = time.time()
-    while True:
-        if len(q) == 0:
-            print("queue is empty")
-            break
-        (ts, shm_name) = q[0]  # return age, shm_name
-        print(f"got queue item: {ts}, {shm_name}")
-        
-        if ts < now - age:
-            q.popleft()  # remove from deque
-            print(f"free_shm_blocks - attaching to: {shm_name}")
-            try:
-                shm = shared_memory.SharedMemory(name=shm_name)
-                shm.close()
-                shm.unlink()
-                print(f"free_shm_blocks - {shm_name} unlinked")
-            except FileNotFoundError:
-                print(f"free_shm_blocks - {shm_name} not found")
-        else:
-            break
-    print("free_shm_blocks - done")
-
-def getSharedMem(app, arr):
-    """
-    Return shared memory object with a copy of the bytes in arrray
-    """
-
-    # use this oppurtunity to free up any old shared memory blocks
-    free_shm_blocks(app)
-    
-    buffer = arrayToBytes(arr)
-    num_bytes = len(buffer)
-    shm = shared_memory.SharedMemory(create=True, size=num_bytes)
-    shm.buf[:num_bytes] = buffer[:]
-    shm_name = shm.name
-    shm.close()
-    now = time.time()
-    # add to queue for later cleanup
-    q = app["shm_blocks"]
-    q.append((now, shm_name))
-    
-    return (shm, num_bytes)
-

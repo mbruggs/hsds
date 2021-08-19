@@ -1490,18 +1490,17 @@ class ValueTest(unittest.TestCase):
                 self.assertEqual(data[offset+3], i*j)
 
         # read all the dataset values using shared memory
-        params = {"use_shared_mem": 1}
-        rsp = self.session.get(req, params=params, headers=headers_bin_rsp)
+        shm = shared_memory.SharedMemory(create=True, size=400)
+        params = {"shm_name": shm.name}
+        rsp = self.session.get(req, params=params, headers=headers)
         self.assertEqual(rsp.status_code, 200)
         rspJson = json.loads(rsp.text)
         self.assertTrue("shm_name" in rspJson)
         shm_name = rspJson["shm_name"]
+        self.assertEqual(shm_name, shm.name)
         self.assertTrue("num_bytes" in rspJson)
         num_bytes = rspJson["num_bytes"]
         self.assertEqual(num_bytes, 400)
-        
-        shm = shared_memory.SharedMemory(name=shm_name)
-        self.assertTrue(len(shm.buf) >= 400)
         data = shm.buf
         for j in range(10):
             for i in range(10):
@@ -1512,8 +1511,8 @@ class ValueTest(unittest.TestCase):
                 self.assertEqual(data[offset+3], i*j)
         print(f"closing {shm_name}")
         shm.close()
-        #print(f"unlinking {shm_name}")
-        #shm.unlink()
+        print(f"unlinking {shm_name}")
+        shm.unlink()
     
         
 

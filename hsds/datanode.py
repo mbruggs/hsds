@@ -218,8 +218,6 @@ async def bucketGC(app):
 
 
 async def start_background_tasks(app):
-    if "is_standalone" in app:
-        return
     loop = asyncio.get_event_loop()
 
     if "is_standalone" not in app:
