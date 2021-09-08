@@ -1543,6 +1543,19 @@ class ValueTest(unittest.TestCase):
         for i in range(4):
             self.assertEqual(row[i], i*row_index)
 
+        # try a binary request
+        headers["accept"] = "application/octet-stream"
+        rsp = self.session.get(req, params=params, headers=headers)
+        self.assertEqual(rsp.status_code, 200)
+        self.assertEqual(len(rsp.content), 16)  # 4 elements, 4 bytes each
+        for i in range(16):
+            byte_val = rsp.content[i]
+            # should see (0,2,4,6) in the low-order byte for each 4-byte word
+            if i%4 == 3:  
+                self.assertEqual(byte_val, (i//4)*2)
+            else:
+                self.assertEqual(byte_val, 0)
+
         # try reading a selection that is out of bounds
         params = {"select": "[0:12, 0:12]"}
         params["nonstrict"] = 1

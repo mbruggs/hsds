@@ -1849,7 +1849,6 @@ async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
     loop = asyncio.get_event_loop()
     log.info(f"doHyperSlabRead - number of chunk_ids: {len(chunk_ids)}")
     log.debug(f"doHyperSlabRead - chunk_ids: {chunk_ids}")
-    cors_domain = config.get("cors_domain")
     log.debug("headers...")
     for k in request.headers:
         v = request.headers[k]
@@ -1949,13 +1948,6 @@ async def doHyperSlabRead(request, chunk_ids, dset_json, slices,
             resp.headers['Content-Type'] = "application/octet-stream"
             resp.content_length = len(output_data)
 
-            # allow CORS
-            if cors_domain:
-                resp.headers['Access-Control-Allow-Origin'] = cors_domain
-                cors_methods = "GET, POST, DELETE, PUT, OPTIONS"
-                resp.headers['Access-Control-Allow-Methods'] = cors_methods
-                cors_headers = "Content-Type, api_key, Authorization"
-                resp.headers['Access-Control-Allow-Headers'] = cors_headers
             log.debug("prepare request")
             await resp.prepare(request)
             log.debug("write request")
