@@ -274,7 +274,7 @@ def getEventPath(event):
             if "http" in reqContext:
                 http = reqContext["http"]
                 if "path" in http:
-                    path = http["method"]
+                    path = http["path"]
     return path
 
 def getEventHeaders(event):
@@ -318,6 +318,7 @@ def lambda_handler(event, context):
     headers = getEventHeaders(event)
     params = getEventParams(event)
     req = getEventPath(event)
+    print(f"got req path: {req}")
  
     if not isinstance(headers, dict):
         err_msg = f"expected headers to be a dict, but got: {type(headers)}"
