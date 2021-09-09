@@ -2,14 +2,12 @@ import requests_unixsocket
 import time
 #import base64
 import subprocess
-import tempfile
 import multiprocessing
 import queue
 import threading
 import signal
 import os
 import logging
-import sys
 
 # note: see https://aws.amazon.com/blogs/compute/parallel-processing-in-python-with-aws-lambda/
 
@@ -201,17 +199,21 @@ def _enqueue_output(out, queue):
     logging.debug("enqueue_output close()")
     out.close()
 
-def make_request(method, req, hs_endpoint=None, params=None, headers=None):
+def make_request(method, req, hs_endpoint=None, params=None, headers=None, body=None):
     # invoke about request
     logging.debug(f"make_request: {hs_endpoint+req}")
+    for k in params:
+        v = params[k]
+        logging.debug(f"param[{k}]: {v}")
+    result = {}
     with requests_unixsocket.Session() as s:
         try:
             if method == "GET":
                 rsp = s.get(hs_endpoint + req, params=params, headers=headers)
             elif method == "POST":
-                rsp = s.post(hs_endpoint + req, params=params, headers=headers)
+                rsp = s.post(hs_endpoint + req, params=params, headers=headers, data=body)
             elif method == "PUT":
-                rsp = s.put(hs_endpoint + req, params=params, headers=headers)
+                rsp = s.put(hs_endpoint + req, params=params, headers=headers, data=body)
             elif method == "DELETE":
                 rsp = s.delete(hs_endpoint + req, params=params, headers=headers)
             else:
@@ -221,9 +223,8 @@ def make_request(method, req, hs_endpoint=None, params=None, headers=None):
 
             logging.info(f"got status_code: {rsp.status_code} from req: {req}")
 
-            result = {"status_code": rsp.status_code}
+            result["status_code"] = rsp.status_code
 
-            #result["status_code"] = rsp.status_code
             #print_process_output(processes)
             if rsp.status_code == 200:
                 logging.info(f"rsp.text: {rsp.text}")
@@ -241,6 +242,55 @@ def enqueue_output(out, queue):
         queue.put(line)
     logging.debug("enqueu_output close()")
     out.close()
+
+def getEventMethod(event):
+    method = "GET"  # default
+    if "method" in event:
+        method = event["method"]
+    else:
+        # scan for method in the api gateway 2.0 format
+        if "requestContext" in event:
+            reqContext = event["requestContext"]
+            if "http" in reqContext:
+                http = reqContext["http"]
+                if "method" in http:
+                    method = http["method"]
+    return method
+
+def getEventPath(event):
+    path = "/about"  # default
+    if "path" in event:
+        path = event["path"]
+    else:
+         # scan for path in the api gateway 2.0 format
+        if "requestContext" in event:
+            reqContext = event["requestContext"]
+            if "http" in reqContext:
+                http = reqContext["http"]
+                if "path" in http:
+                    path = http["method"]
+    return path
+
+def getEventHeaders(event):
+    headers = {}  # default
+    if "headers" in event:
+        headers = event["headers"]
+    return headers
+
+def getEventParams(event):
+    params = {}  # default
+    if "params" in event:
+        params = event["params"]
+    elif "queryStringParameters" in event:
+        params = event["queryStringParameters"]
+    return params
+
+def getEventBody(event):
+    body = {}  # default
+    if "body" in event:
+        body = event["body"]
+    return body
+
 
 def lambda_handler(event, context):
     # setup logging
@@ -270,42 +320,31 @@ def lambda_handler(event, context):
     if "AWS_SESSION_TOKEN" in os.environ:
         logging.debug(f"using AWS_SESSION_TOKEN: {os.environ['AWS_SESSION_TOKEN']}")
     logging.debug(f"event: {event}")
-    if "method" in event:
-        method = event["method"]
-        logging.debug(f"got method: {method}")
-    else:
-        method = "GET"
+    method = getEventMethod(event)
     if method not in ("GET", "POST", "PUT", "DELETE"):
         err_msg = f"method: {method} is unsupported"
         logging.error(err_msg)
         return {"status_code": 400, "error": err_msg}
-    if "request" in event:
-        req = event["request"]
-        logging.info(f"got request: {req}")
-    else:
-        logging.warning("no request found in event")
-        req = "/about"
-    if "headers" in event:
-        headers = event["headers"]
-        logging.info(f"headers: {headers}")
-        if not isinstance(headers, dict):
-            err_msg = f"expected headers to be a dict, but got: {type(headers)}"
-            logging.error(err_msg)
-            return {"status_code": 400, "error": err_msg}
-    else:
-        logging.debug("no headers found in event")
-        headers = {}
 
-    if "params" in event:
-        params = event["params"]
-        logging.info(f"params: {params}")
-        if not isinstance(params, dict):
-            err_msg = f"expected params to be a dict, but got: {type(params)}"
-            logging.error(err_msg)
-            return {"status_code": 400, "error": err_msg}
-    else:
-        logging.debug("no params found in event")
-        params = {}
+    headers = getEventHeaders(event)
+    params = getEventParams(event)
+    req = getEventPath(event)
+ 
+    if not isinstance(headers, dict):
+        err_msg = f"expected headers to be a dict, but got: {type(headers)}"
+        logging.error(err_msg)
+        return {"status_code": 400, "error": err_msg}
+   
+    if not isinstance(params, dict):
+        err_msg = f"expected params to be a dict, but got: {type(params)}"
+        logging.error(err_msg)
+        return {"status_code": 400, "error": err_msg}
+    
+    body = getEventBody(event)
+    if body and method not in ("PUT", "POST"):
+        err_msg = "body only support with PUT and POST methods"
+        logging.error(err_msg)
+        return {"status_code": 400, "error": err_msg}
 
     cpu_count = multiprocessing.cpu_count()
     logging.info(f"got cpu_count of: {cpu_count}")
@@ -320,9 +359,9 @@ def lambda_handler(event, context):
     # instantiate hsdsapp object
     hsds = HsdsApp(username=function_name, password="lambda", dn_count=target_dn_count)
     hsds.run()
-    time.sleep(5)
+    time.sleep(10)
 
-    result = make_request(method, req, hs_endpoint=hsds.endpoint, params=params, headers=headers)
+    result = make_request(method, req, hs_endpoint=hsds.endpoint, params=params, headers=headers, body=body)
     logging.info(f"got result: {result}")
     hsds.stop()
     return result
@@ -341,8 +380,11 @@ if __name__ == "__main__":
         @property
         def function_name(self):
             return "hslambda"
-
-    event = {"method": "GET", "request": req, "params": params}
+    
+    # simplified event format
+    # see: https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html
+    # for a description of the API Gateway 2.0 format which is also supported
+    event = {"method": "GET", "path": req, "params": params}
     context = Context()
     lambda_handler(event, context)
 
