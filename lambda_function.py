@@ -6,10 +6,36 @@ import multiprocessing
 import queue
 import threading
 import signal
-import os
-import logging
+import os 
 
 # note: see https://aws.amazon.com/blogs/compute/parallel-processing-in-python-with-aws-lambda/
+
+class HsdsLogger:
+    def __init__(self):
+        # set log level based on LOG_LEVEL env
+        if "LOG_LEVEL" in os.environ:
+            log_level_cfg = os.environ["LOG_LEVEL"]
+        else:
+            log_level_cfg = "INFO"
+        if log_level_cfg not in ("DEBUG", "WARN", "INFO", "ERROR"):
+            print(f"unsupported log_level: {log_level_cfg}, using INFO instead")
+            log_level_cfg = "INFO"
+        self._log_level = log_level_cfg
+
+    def debug(self, msg):
+        if self._log_level == "DEBUG":
+            print(f"DEUBG: {msg}")
+
+    def info(self, msg):
+        if self._log_level in ("INFO", "DEBUG"):
+            print(f"INFO: {msg}")
+
+    def warn(self, msg):
+        if self._log_level in ("WARN", "INFO", "DEBUG"):
+            print(f"WARN: {msg}")
+
+    def error(self, msg):
+        print(f"ERROR: {msg}")
 
 
 
@@ -18,23 +44,12 @@ class HsdsApp:
     Class to initiate and manage sub-process HSDS service
     """
 
-    def __init__(self, username=None, password=None, logger=None, dn_count=1, logfile=None):
+    def __init__(self, username=None, password=None,  dn_count=1, logfile=None):
         """
         Initializer for class
         """
         # self._tempdir = tempfile.TemporaryDirectory()
         socket_dir = "%2Ftmp%2F"
-        """
-        for ch in self._tempdir.name:
-            if ch == '/':
-                socket_dir.append('%2F')
-            else:
-                socket_dir.append(ch)
-        if self._tempdir.name[-1] != '/':
-            socket_dir.append('%2F')
-        socket_dir = "".join(socket_dir)
-        """
-         
         
         # socket_dir = "%2Ftmp%2F"  # TBD: use temp dir
         self._dn_urls = []
@@ -44,14 +59,10 @@ class HsdsApp:
         self._dn_count = dn_count
         self._username = username
         self._password = password
-        self._logfile = None
+        self._logfile = logfile
 
-        if logger is None:
-            self.log = logging
-        else:
-            self.log = logger
+        self.log = HsdsLogger()
 
-        
         for i in range(dn_count):
             dn_url = f"http+unix://{socket_dir}dn_{(i+1)}.sock"
             self._dn_urls.append(dn_url)
@@ -142,7 +153,7 @@ class HsdsApp:
                 pargs = ["hsds-datanode", f"--log_prefix=dn{node_number+1} "]
                 pargs.append(f"--dn_urls={dn_urls_arg}")
                 pargs.append(f"--node_number={node_number}")
-            # logging.info(f"starting {pargs[0]}")
+            # self.log.info(f"starting {pargs[0]}")
             pargs.extend(common_args)
             p = subprocess.Popen(pargs, bufsize=1, universal_newlines=True, shell=False, stdout=pout)
             self._processes.append(p)
@@ -161,9 +172,9 @@ class HsdsApp:
         if not self._processes:
             return
         now = time.time()
-        logging.info(f"hsds app stop at {now}")
+        self.log.info(f"hsds app stop at {now}")
         for p in self._processes:
-            logging.info(f"sending SIGINT to {p.args[0]}")
+            self.log.info(f"sending SIGINT to {p.args[0]}")
             p.send_signal(signal.SIGINT)
         # wait for sub-proccesses to exit
         # wait for up to 2 seconds -- 20 * 0.1
@@ -173,13 +184,13 @@ class HsdsApp:
                 if p.poll() is None:
                     is_alive = True
             if is_alive:
-                logging.debug("still alive, sleep 0.1")
+                self.log.debug("still alive, sleep 0.1")
                 time.sleep(0.1)
 
         # kill any reluctant to die processes        
         for p in self._processes:
             if p.poll():
-                logging.info(f"terminating {p.args[0]}")
+                self.log.info(f"terminating {p.args[0]}")
                 p.terminate()
         self._processes = []
         for t in self._threads:
@@ -196,15 +207,11 @@ class HsdsApp:
 def _enqueue_output(out, queue):
     for line in iter(out.readline, b''):
         queue.put(line)
-    logging.debug("enqueue_output close()")
     out.close()
 
 def make_request(method, req, hs_endpoint=None, params=None, headers=None, body=None):
     # invoke about request
-    logging.debug(f"make_request: {hs_endpoint+req}")
-    for k in params:
-        v = params[k]
-        logging.debug(f"param[{k}]: {v}")
+    print(f"make_request: {hs_endpoint+req}")
     result = {}
     with requests_unixsocket.Session() as s:
         try:
@@ -218,29 +225,28 @@ def make_request(method, req, hs_endpoint=None, params=None, headers=None, body=
                 rsp = s.delete(hs_endpoint + req, params=params, headers=headers)
             else:
                 msg = f"Unexpected request method: {method}"
-                logging.error(msg)
+                print(msg)
                 raise ValueError(msg)
 
-            logging.info(f"got status_code: {rsp.status_code} from req: {req}")
+            print(f"got status_code: {rsp.status_code} from req: {req}")
 
             result["status_code"] = rsp.status_code
 
             #print_process_output(processes)
             if rsp.status_code == 200:
-                logging.info(f"rsp.text: {rsp.text}")
+                print(f"rsp.text: {rsp.text}")
                 result["output"] = rsp.text
         except Exception as e:
-            logging.error(f"got exception: {e}, quitting")
+            print(f"got exception: {e}, quitting")
         except KeyboardInterrupt:
-            logging.error("got KeyboardInterrupt, quitting")
+            print("got KeyboardInterrupt, quitting")
         finally:
-            logging.debug("request done")  
+            print("request done")  
         return result    
 
 def enqueue_output(out, queue):
     for line in iter(out.readline, b''):
         queue.put(line)
-    logging.debug("enqueu_output close()")
     out.close()
 
 def getEventMethod(event):
@@ -294,37 +300,19 @@ def getEventBody(event):
 
 def lambda_handler(event, context):
     # setup logging
-    if "LOG_LEVEL" in os.environ:
-        log_level_cfg = os.environ["LOG_LEVEL"]
-    else:
-        log_level_cfg = "INFO"
-    if log_level_cfg == "DEBUG":
-        log_level = logging.DEBUG
-    elif log_level_cfg == "INFO":
-        log_level = logging.INFO
-    elif log_level_cfg in ("WARN", "WARNING"):
-        log_level = logging.WARN
-    elif log_level_cfg == "ERROR":
-        log_level = logging.ERROR
-    else:
-        print(f"unsupported log_level: {log_level_cfg}, using INFO instead")
-        log_level = logging.INFO
-    print(f"setting LOG_LEVEL to {log_level_cfg}")
-
-    logging.basicConfig(level=log_level)
-
+   
     # process event data
     function_name = context.function_name
-    logging.info(f"lambda_handler(event, context) for function {function_name}")
+    print(f"lambda_handler(event, context) for function {function_name}")
     if "AWS_ROLE_ARN" in os.environ:
-        logging.debug(f"using AWS_ROLE_ARN: {os.environ['AWS_ROLE_ARN']}")
+        print(f"using AWS_ROLE_ARN: {os.environ['AWS_ROLE_ARN']}")
     if "AWS_SESSION_TOKEN" in os.environ:
-        logging.debug(f"using AWS_SESSION_TOKEN: {os.environ['AWS_SESSION_TOKEN']}")
-    logging.debug(f"event: {event}")
+        print(f"using AWS_SESSION_TOKEN: {os.environ['AWS_SESSION_TOKEN']}")
+    print(f"event: {event}")
     method = getEventMethod(event)
     if method not in ("GET", "POST", "PUT", "DELETE"):
         err_msg = f"method: {method} is unsupported"
-        logging.error(err_msg)
+        print(err_msg)
         return {"status_code": 400, "error": err_msg}
 
     headers = getEventHeaders(event)
@@ -333,29 +321,29 @@ def lambda_handler(event, context):
  
     if not isinstance(headers, dict):
         err_msg = f"expected headers to be a dict, but got: {type(headers)}"
-        logging.error(err_msg)
+        print(err_msg)
         return {"status_code": 400, "error": err_msg}
    
     if not isinstance(params, dict):
         err_msg = f"expected params to be a dict, but got: {type(params)}"
-        logging.error(err_msg)
+        print(err_msg)
         return {"status_code": 400, "error": err_msg}
     
     body = getEventBody(event)
     if body and method not in ("PUT", "POST"):
         err_msg = "body only support with PUT and POST methods"
-        logging.error(err_msg)
+        print(err_msg)
         return {"status_code": 400, "error": err_msg}
 
     cpu_count = multiprocessing.cpu_count()
-    logging.info(f"got cpu_count of: {cpu_count}")
+    print(f"got cpu_count of: {cpu_count}")
     if "TARGET_DN_COUNT" in os.environ:
         target_dn_count = int(os.environ["TARGET_DN_COUNT"])
     else:
         # base dn count on half the VCPUs (rounded up)
         target_dn_count = - (-cpu_count // 2)
     target_dn_count = 1 # test
-    logging.info(f"setting dn count to: {target_dn_count}")
+    print(f"setting dn count to: {target_dn_count}")
 
     # instantiate hsdsapp object
     hsds = HsdsApp(username=function_name, password="lambda", dn_count=target_dn_count)
@@ -363,7 +351,7 @@ def lambda_handler(event, context):
     time.sleep(10)
 
     result = make_request(method, req, hs_endpoint=hsds.endpoint, params=params, headers=headers, body=body)
-    logging.info(f"got result: {result}")
+    print(f"got result: {result}")
     hsds.stop()
     return result
 
