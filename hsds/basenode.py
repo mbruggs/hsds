@@ -611,7 +611,7 @@ def baseInit(node_type):
             for i in range(len(dn_urls)):
                 dn_url = dn_urls[i]
                 if not dn_url.startswith("http"):
-                    log.warn(f"Unexpected dn_url value: {dn_url}")
+                    log.warn(f"Unexpected dn_url value: {dn_url}, type: {type(dn_url)}")
                 dn_id = createNodeId("dn", node_number=i)
                 dn_ids.append(dn_id)
         else:

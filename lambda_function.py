@@ -10,6 +10,11 @@ import os
 
 # note: see https://aws.amazon.com/blogs/compute/parallel-processing-in-python-with-aws-lambda/
 
+def _enqueue_output(out, queue):
+    for line in iter(out.readline, b''):
+        queue.put(line)
+    out.close()
+
 class HsdsLogger:
     def __init__(self):
         # set log level based on LOG_LEVEL env
@@ -127,6 +132,9 @@ class HsdsApp:
         # create processes for count dn nodes, sn node, and rangeget node
         count = self._dn_count + 2  # plus 2 for rangeget proxy and sn
 
+        # set PYTHONUNBUFFERED so we can get any output immediately
+        os.environ["PYTHONUNBUFFERED"] = "1"
+
         common_args = ["--standalone", ]
         # print("setting log_level to:", args.loglevel)
         # common_args.append(f"--log_level={args.loglevel}")
@@ -197,6 +205,42 @@ class HsdsApp:
             del t
         self._threads = []
 
+    def invoke(self, method, path, params=None, headers=None, body=None):
+        # invoke given request
+        req = self.endpoint + path
+        print(f"make_request: {req}")
+        result = {}
+        with requests_unixsocket.Session() as s:
+            try:
+                if method == "GET":
+                    rsp = s.get(req, params=params, headers=headers)
+                elif method == "POST":
+                    rsp = s.post(req, params=params, headers=headers, data=body)
+                elif method == "PUT":
+                    rsp = s.put(req, params=params, headers=headers, data=body)
+                elif method == "DELETE":
+                    rsp = s.delete(req, params=params, headers=headers)
+                else:
+                    msg = f"Unexpected request method: {method}"
+                    print(msg)
+                    raise ValueError(msg)
+
+                print(f"got status_code: {rsp.status_code} from req: {req}")
+
+                result["status_code"] = rsp.status_code
+
+                #print_process_output(processes)
+                if rsp.status_code == 200:
+                    print(f"rsp.text: {rsp.text}")
+                    result["output"] = rsp.text
+            except Exception as e:
+                print(f"got exception: {e}, quitting")
+            except KeyboardInterrupt:
+                print("got KeyboardInterrupt, quitting")
+            finally:
+                print("request done")  
+        return result 
+
     def __del__(self):
         """ cleanup class resources """
         self.stop()
@@ -204,50 +248,6 @@ class HsdsApp:
 # End HsdsApp class
 #
 
-def _enqueue_output(out, queue):
-    for line in iter(out.readline, b''):
-        queue.put(line)
-    out.close()
-
-def make_request(method, req, hs_endpoint=None, params=None, headers=None, body=None):
-    # invoke about request
-    print(f"make_request: {hs_endpoint+req}")
-    result = {}
-    with requests_unixsocket.Session() as s:
-        try:
-            if method == "GET":
-                rsp = s.get(hs_endpoint + req, params=params, headers=headers)
-            elif method == "POST":
-                rsp = s.post(hs_endpoint + req, params=params, headers=headers, data=body)
-            elif method == "PUT":
-                rsp = s.put(hs_endpoint + req, params=params, headers=headers, data=body)
-            elif method == "DELETE":
-                rsp = s.delete(hs_endpoint + req, params=params, headers=headers)
-            else:
-                msg = f"Unexpected request method: {method}"
-                print(msg)
-                raise ValueError(msg)
-
-            print(f"got status_code: {rsp.status_code} from req: {req}")
-
-            result["status_code"] = rsp.status_code
-
-            #print_process_output(processes)
-            if rsp.status_code == 200:
-                print(f"rsp.text: {rsp.text}")
-                result["output"] = rsp.text
-        except Exception as e:
-            print(f"got exception: {e}, quitting")
-        except KeyboardInterrupt:
-            print("got KeyboardInterrupt, quitting")
-        finally:
-            print("request done")  
-        return result    
-
-def enqueue_output(out, queue):
-    for line in iter(out.readline, b''):
-        queue.put(line)
-    out.close()
 
 def getEventMethod(event):
     method = "GET"  # default
@@ -348,11 +348,13 @@ def lambda_handler(event, context):
 
     # instantiate hsdsapp object
     hsds = HsdsApp(username=function_name, password="lambda", dn_count=target_dn_count)
-    hsds.run()
-    time.sleep(10)
+    for i in range(10):
+        hsds.run()
+        time.sleep(1)
 
-    result = make_request(method, req, hs_endpoint=hsds.endpoint, params=params, headers=headers, body=body)
+    result = hsds.invoke(method, req, params=params, headers=headers, body=body)
     print(f"got result: {result}")
+    hsds.check_processes()
     hsds.stop()
     return result
 
@@ -376,5 +378,6 @@ if __name__ == "__main__":
     # for a description of the API Gateway 2.0 format which is also supported
     event = {"method": "GET", "path": req, "params": params}
     context = Context()
-    lambda_handler(event, context)
+    result = lambda_handler(event, context)
+    print(f"got result: {result}")
 

@@ -168,6 +168,7 @@ def get_http_client(app, url=None, cache_client=True):
         client = ClientSession(connector=UnixConnector(path=socket_path))
         if cache_client:
             socket_clients[socket_path] = client
+        log.info(f"Socket Ready: {socket_path}")
     else:
         max_tcp_connections = int(config.get("max_tcp_connections"))
         msg = f"Initiating TCPConnector for {url} with limit "
