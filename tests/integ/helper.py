@@ -18,24 +18,23 @@ import time
 import base64
 try:
     import pytz
-    USE_UTC=True
+    USE_UTC = True
 except ModuleNotFoundError:
-    USE_UTC=False
+    USE_UTC = False
 
 import config
-"""
-    Helper function - get endpoint we'll send http requests to
-"""
+
+
 def getEndpoint():
+    """Get endpoint we'll send HTTP requests to"""
     endpoint = config.get("hsds_endpoint")
     return endpoint
 
-""" 
-  Helper function - get session object
-"""
+
 def getSession():
+    """Get session object"""
     endpoint = getEndpoint()
-    
+
     if endpoint.endswith(".sock"):
         # use requests_unixsocket to get a socket session
         # Expect endpoint in the form:
@@ -46,19 +45,14 @@ def getSession():
     return session
 
 
-"""
-    Helper function - get endpoint we'll send http requests to
-"""
 def getRangeGetEndpoint():
-
+    """Get endpoint we'll send HTTP range GET requests to"""
     endpoint = config.get("rangeget_endpoint")
     return endpoint
 
 
-"""
-Helper function - return true if the parameter looks like a UUID
-"""
 def validateId(id):
+    """Return true if the parameter looks like a UUID"""
     if type(id) != str:
         # should be a string
         return False
@@ -67,10 +61,9 @@ def validateId(id):
         return False
     return True
 
-"""
-Helper - return number of active sn/dn nodes
-"""
+
 def getActiveNodeCount(session=None):
+    """Return number of active sn/dn nodes"""
     req = getEndpoint("head") + "/info"
     rsp = session.get(req)
     rsp_json = json.loads(rsp.text)
@@ -78,10 +71,9 @@ def getActiveNodeCount(session=None):
     dn_count = rsp_json["active_dn_count"]
     return sn_count, dn_count
 
-"""
-Helper - get base domain to use for test_cases
-"""
+
 def getTestDomainName(name):
+    """Get base domain to use for test_cases"""
     now = time.time()
     if USE_UTC:
         dt = datetime.fromtimestamp(now, pytz.utc)
@@ -94,13 +86,13 @@ def getTestDomainName(name):
     domain += '/'
     domain += name.lower()
     domain += '/'
-    domain += "{:04d}{:02d}{:02d}T{:02d}{:02d}{:02d}_{:06d}Z".format(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond)
+    domain += "{:04d}{:02d}{:02d}T{:02d}{:02d}{:02d}_{:06d}Z".format(
+        dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, dt.microsecond)
     return domain
 
-"""
-Helper - get default request headers for domain
-"""
+
 def getRequestHeaders(domain=None, username=None, bucket=None, password=None, **kwargs):
+    """Get default request headers for domain"""
     if username is None:
         username = config.get("user_name")
         if password is None:
@@ -108,9 +100,9 @@ def getRequestHeaders(domain=None, username=None, bucket=None, password=None, **
     elif username == config.get("user2_name"):
         if password is None:
             password = config.get("user2_password")
-    headers = { }
+    headers = dict()
     if domain is not None:
-        #if config.get("bucket_name"):
+        # if config.get("bucket_name"):
         #    domain = config.get("bucket_name") + domain
         headers['X-Hdf-domain'] = domain.encode('utf-8')
     if username and password:
@@ -131,19 +123,17 @@ def getRequestHeaders(domain=None, username=None, bucket=None, password=None, **
         headers[k] = kwargs[k]
     return headers
 
-"""
-Helper - Get parent domain of given domain.
-"""
+
 def getParentDomain(domain):
+    """Get parent domain of given domain."""
     parent = op.dirname(domain)
     if not parent:
-        raise ValueError("Invalid domain") # can't end with dot
+        raise ValueError("Invalid domain")  # can't end with dot
     return parent
 
-"""
-Helper - Get DNS-style domain name given a filepath domain
-"""
+
 def getDNSDomain(domain):
+    """Get DNS-style domain name given a filepath domain"""
     names = domain.split('/')
     names.reverse()
     dns_domain = ''
@@ -154,10 +144,9 @@ def getDNSDomain(domain):
     dns_domain = dns_domain[:-1]  # str trailing dot
     return dns_domain
 
-"""
-Helper - Create domain (and parent domin if needed)
-"""
+
 def setupDomain(domain, folder=False):
+    """Create domain (and parent domain if needed)"""
     endpoint = config.get("hsds_endpoint")
     headers = getRequestHeaders(domain=domain)
     req = endpoint + "/"
@@ -175,7 +164,7 @@ def setupDomain(domain, folder=False):
         setupDomain(parent_domain, folder=True)
 
         headers = getRequestHeaders(domain=domain)
-        body=None
+        body = None
         if folder:
             body = {"folder": True}
             rsp = session.put(req, data=json.dumps(body), headers=headers)
@@ -184,35 +173,31 @@ def setupDomain(domain, folder=False):
         if rsp.status_code != 201:
             raise ValueError(f"Unexpected put domain error: {rsp.status_code}")
 
-"""
-Helper function - get root uuid for domain
-"""
+
 def getRootUUID(domain, username=None, password=None, session=None):
+    """Get root uuid for domain"""
     req = getEndpoint() + "/"
     headers = getRequestHeaders(domain=domain, username=username, password=password)
 
     rsp = session.get(req, headers=headers)
-    root_uuid= None
+    root_uuid = None
     if rsp.status_code == 200:
         rspJson = json.loads(rsp.text)
         root_uuid = rspJson["root"]
     return root_uuid
 
 
-"""
-Helper function - get a domain for one of the test files
-"""
 def getTestDomain(name):
+    """Get a domain for one of the test files"""
     username = config.get("user_name")
     path = f'/home/{username}/test/{name}'
     return path
 
-"""
-Helper function - get uuid for a given path
-"""
+
 def getUUIDByPath(domain, path, username=None, password=None, session=None):
+    """Get uuid for a given path"""
     if path[0] != '/':
-        raise KeyError("only abs paths") # only abs paths
+        raise KeyError("only abs paths")  # only abs paths
 
     parent_uuid = getRootUUID(domain, username=username, password=password, session=session)
 
@@ -222,7 +207,11 @@ def getUUIDByPath(domain, path, username=None, password=None, session=None):
     headers = getRequestHeaders(domain=domain)
 
     # make a fake tgt_json to represent 'link' to root group
-    tgt_json = {'collection': "groups", 'class': "H5L_TYPE_HARD", 'id': parent_uuid }
+    tgt_json = {
+        'collection': "groups",
+        'class': "H5L_TYPE_HARD",
+        'id': parent_uuid
+    }
     tgt_uuid = None
 
     names = path.split('/')
@@ -250,10 +239,9 @@ def getUUIDByPath(domain, path, username=None, password=None, session=None):
             raise KeyError("non-hard link")
     return tgt_uuid
 
-"""
-Helper function = get HDF5 JSON dump for chunbk locations
-"""
+
 def getHDF5JSON(filename):
+    """Get HDF5 JSON dump for chunk locations"""
     if not op.isfile(filename):
         return None
     hdf5_json = None

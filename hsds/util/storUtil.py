@@ -41,6 +41,31 @@ except ImportError:
 from .. import config
 
 
+def getCompressors():
+    """ return available compressors """
+    compressors = codecs.blosc.list_compressors()
+    # replace zlib with the equivalent gzip since that is the h5py name
+    if "gzip" not in compressors and "zlib" in compressors:
+        for i in range(len(compressors)):
+            if compressors[i] == "zlib":
+                compressors[i] = "gzip"
+                break
+
+    return compressors
+
+
+def setBloscThreads(nthreads):
+    """ Set the number of threads blosc will use for compression """
+    codecs.blosc.set_nthreads(nthreads)
+
+
+def getBloscThreads():
+    """ Get the number of blosc threads to be used for compression """
+    nthreads = codecs.blosc_get_nthreads()
+
+    return nthreads
+
+
 def _shuffle(element_size, chunk):
     shuffler = codecs.Shuffle(element_size)
     arr = shuffler.encode(chunk)
@@ -95,6 +120,46 @@ async def releaseStorageClient(app):
 
     if "storage_client" in app:
         del app["storage_client"]
+
+def _getURIParts(uri):
+    """ return tuple of (bucket, path) for given URI """
+    if uri.startswith("s3://"):
+        uri = uri[5:]
+    if uri.startswith('/'):
+        raise ValueError("invalid uri")
+    n = uri.find('/')
+    if n < 0:
+        raise ValueError("invalid uri")
+    fields = (uri[:n], uri[n:])
+    return fields
+
+def getBucketFromStorURI(uri):
+    """ Return a bucket name given a storage URI 
+        Examples:
+          s3://mybucket/folder/object.json  -> mybucket
+          mybucket/folder/object.json  -> mybucket
+          mybucket -> ValueError  # no slash
+          /mybucket/folder/object.json -> ValueError # not expecting abs path
+    """
+    fields = _getURIParts(uri)
+    bucket = fields[0]
+    if not bucket:
+        raise ValueError("invalid uri")
+    return bucket
+
+def getKeyFromStorURI(uri):
+    """ Return a key (path within a bucket) given a storage URI 
+        Examples:
+          s3://mybucket/folder/object.json  -> mybucket
+          mybucket/folder/object.json  -> mybucket
+          mybucket -> ValueError  # no slash
+          /mybucket/folder/object.json -> ValueError # not expecting abs path
+    """
+    fields = _getURIParts(uri)
+    path = fields[1]
+    if not path:
+        raise ValueError("invalid uri")
+    return path
 
 
 async def rangegetProxy(app, bucket=None, key=None, offset=0, length=0):
@@ -180,7 +245,8 @@ async def getStorBytes(app, key, filter_ops=None, offset=0,
     msg = f"getStorBytes({bucket}/{key}, offset={offset}, length: {length})"
     log.info(msg)
 
-    data_cache_page_size = int(config.get("data_cache_page_size"))
+    default_req_size = 128 * 1024 * 1024  # 128KB
+    data_cache_max_req_size = int(config.get("data_cache_max_req_size", default=default_req_size))
 
     shuffle = 0
     compressor = None
@@ -195,7 +261,7 @@ async def getStorBytes(app, key, filter_ops=None, offset=0,
 
     kwargs = {"bucket": bucket, "key": key,
               "offset": offset, "length": length}
-    if offset > 0 and use_proxy and length < data_cache_page_size:
+    if offset > 0 and use_proxy and length < data_cache_max_req_size:
         # use rangeget proxy
         data = await rangegetProxy(app, **kwargs)
     else:

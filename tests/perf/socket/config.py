@@ -10,26 +10,38 @@
 # request a copy from help@hdfgroup.org.                                     #
 ##############################################################################
 import os
+import sys
 
 cfg = {
-    'hsds_endpoint': 'http://localhost:5101',
-    # or 'http+unix://%2Ftmp%2Fsn_1.sock' for socket
-    'head_endpoint': 'http://localhost:5100',
-    'rangeget_endpoint': 'http://localhost:6900',
-    'user_name': 'test_user1',
-    'user_password': 'test',
-    'user2_name': 'test_user2',
-    'user2_password': 'test',
-    'test_noauth': True,
-    'default_public': False,  # set to true if the server makes new domains publicly readable
-    'bucket_name': '',   # bucket name to be used for requests
-    'hdf5_sample_bucket': '',  # S3 bucket for storing traditional HDF5 files (snp500.h5 and tall.h5), e.g. 'hdf5_sample'
-    'test_group': 'test_group',  # group defined in admin/config/groups.txt that includes user user_name and user2_name
-    'max_chunks_per_folder': 0   # match with this config setting on server
+    'host': "127.0.0.1",
+    'port': 0,
+    'num_bytes': 1048576,
+    'batch_size': 10240,
+    'use_shared_mem': 0,
+    'socket_type': "AF_INET"  # AF_UNIX or AF_INET
 }
 
+def getCmdLineArg(x):
+    # return value of command-line option
+    # use "--x=val" to set option 'x' to 'val'
+    # use "--x" for boolean flags
+    option = '--'+x+'='
+    for i in range(1, len(sys.argv)):
+        arg = sys.argv[i]
+        if arg == '--'+x:
+            # boolean flag
+            return True
+        elif arg.startswith(option):
+            # found an override
+            override = arg[len(option):]  # return text after option string
+            return override
+    return None
 
 def get(x):
+    # see if there is a cmd line override
+    retval = getCmdLineArg(x)
+    if retval:
+        return retval
     # see if there are an environment variable override
     if x.upper() in os.environ:
         return os.environ[x.upper()]

@@ -32,6 +32,7 @@ from .util.httpUtil import http_get, http_post, jsonResponse
 from .util.idUtil import createNodeId, getNodeNumber, getNodeCount
 from .util.authUtil import getUserPasswordFromRequest, validateUserPassword
 from .util.authUtil import isAdminUser
+from .util.k8sClient import getPodIps
 from . import hsds_logger as log
 
 HSDS_VERSION = "0.7.0beta"
@@ -42,16 +43,19 @@ def getVersion():
 
 
 def getHeadUrl(app):
-    head_url = None
-
-    if head_url in app:
+    if "head_url" in app:
         head_url = app["head_url"]
-    elif config.get("head_endpoint"):
-        head_url = config.get("head_endpoint")
     else:
         head_port = config.get("head_port")
-        head_url = f"http://hsds_head:{head_port}"
-    log.debug(f"head_url: {head_url}")
+        if head_port:
+            if "KUBERNETES_SERVICE_HOST" in os.environ:
+                dns_name = "127.0.0.1"
+            else:
+                dns_name = "head"
+            head_url = f"http://{dns_name}:{head_port}"
+        else:
+            head_url = ""
+        app["head_url"] = head_url
     return head_url
 
 
@@ -178,10 +182,8 @@ async def k8s_update_dn_info(app):
     """
     log.info("k8s_update_dn_info")
     k8s_app_label = config.get("k8s_app_label")
-    k8s_namespace = config.get("k8s_namespace")
     # put import here to avoid k8s package dependency unless required
-    from .util.k8sClient import getPodIps
-    pod_ips = getPodIps(k8s_app_label, k8s_namespace=k8s_namespace)
+    pod_ips = await getPodIps(k8s_app_label)
     if not pod_ips:
         log.error("Expected to find at least one hsds pod")
         return
@@ -193,7 +195,7 @@ async def k8s_update_dn_info(app):
         dn_urls.append(f"http://{pod_ip}:{dn_port}")
     # call info on each dn container and get node ids
     dn_ids = []
-    for dn_url in app["dn_urls"]:
+    for dn_url in dn_urls:
         req = dn_url + "/info"
         log.debug(f"about to call: {req}")
         try:
@@ -266,13 +268,10 @@ async def update_dn_info(app):
     if "oio_proxy" in app:
         #  Using OpenIO consicience daemons
         await oio_update_dn_info(app)
-    elif "is_k8s" in app:
+    elif "is_k8s" in app and not getHeadUrl(app):
         await k8s_update_dn_info(app)
-    elif "is_standalone" in app:
-        # dn_urls are static in standalone mode
-        pass
     else:
-        # docker
+        # docker or kubernetes running with head container
         await docker_update_dn_info(app)
 
     # do a log if there has been a change in the dn nodes
@@ -640,20 +639,10 @@ def baseInit(node_type):
         # will set node_ip at registration time
     else:
         # check to see if we are running in a k8s cluster
-        try:
-            k8s_app_label = config.get("k8s_app_label")
-            if "KUBERNETES_SERVICE_HOST" in os.environ:
-                log.info("running in kubernetes")
-                if k8s_app_label:
-                    log.info("setting is_k8s to True")
-                    app["is_k8s"] = True
-                else:
-                    msg = "k8s_app_label not set, running in k8s single pod"
-                    log.info(msg)
-        except KeyError:
-            # guard against KeyError since k8s_app_label is a recent key
-            log.warn("expected to find key k8s_app_label in config")
-        if "is_k8s" not in app:
+        if "KUBERNETES_SERVICE_HOST" in os.environ:
+            log.info("running in kubernetes")
+            app["is_k8s"] = True
+        else:
             # check to see if we are running in a docker container
             proc_file = "/proc/self/cgroup"
             if os.path.isfile(proc_file):
@@ -664,6 +653,7 @@ def baseInit(node_type):
                         if len(fields) >= 3:
                             field = fields[2]
                             if field.startswith("/docker/"):
+                                log.info("running in docker")
                                 app["is_docker"] = True
 
     if "is_dcos" in app:

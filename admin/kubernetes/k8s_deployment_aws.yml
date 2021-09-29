@@ -1,3 +1,4 @@
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,7 +18,7 @@ spec:
       containers:
         -
           name: sn
-          image: "hdfgroup/hsds:v0.6.3i"
+          image: "hdfgroup/hsds:v0.7.0beta6"
           imagePullPolicy: IfNotPresent
           resources:
             requests:
@@ -36,13 +37,23 @@ spec:
           env:
           - name: NODE_TYPE
             value: sn
+          - name: HEAD_PORT
+            value: null # no head container
           - name: PASSWORD_FILE
             value: /config/passwd.txt
-          - name: AWS_ROLE_ARN
-            value: arn:aws:iam::1234567890:role/eks-node-role
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: aws-auth-keys
+                key: aws_access_key_id
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: aws-auth-keys
+                key: aws_secret_access_key
         -
           name: dn
-          image: "hdfgroup/hsds:v0.6.3i"
+          image: "hdfgroup/hsds:v0.7.0beta6"
           lifecycle:
             preStop:
               exec:
@@ -62,8 +73,18 @@ spec:
           env:
           - name: NODE_TYPE
             value: dn
-          - name: AWS_ROLE_ARN
-            value: arn:aws:iam::1234567890:role/eks-node-role
+          - name: HEAD_PORT
+            value: null # no head container
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: aws-auth-keys
+                key: aws_access_key_id
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: aws-auth-keys
+                key: aws_secret_access_key
       volumes:
       - name: accounts
         secret:
