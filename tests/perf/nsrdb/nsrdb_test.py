@@ -12,6 +12,8 @@ SHAPE = (17568, 2018392)
 H5_PATH = "/wind_speed"
 OPTIONS = ("--hdf5", "--hsds", "--ros3")
 
+# Note: currently the ros3 option needs the h5py build from conda-forge
+
 index = None  
 
 if len(sys.argv) < 2 or sys.argv[1] not in OPTIONS:
