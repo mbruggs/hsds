@@ -393,9 +393,7 @@ def lambda_handler(event, context):
 
     # instantiate hsdsapp object
     hsds = HsdsApp(username=function_name, password="lambda", dn_count=target_dn_count)
-    for i in range(10):
-        hsds.run()
-        time.sleep(1)
+    hsds.run()
 
     result = hsds.invoke(method, req, params=params, headers=headers, body=body)
     print(f"got result: {result}")
