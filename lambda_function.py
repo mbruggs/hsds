@@ -156,6 +156,7 @@ class HsdsApp:
         common_args.append(f"--dn_urls={dn_urls_arg}") 
         common_args.append(f"--rangeget_url={self._rangeget_url}")
         common_args.append(f"--hsds_endpoint={self._endpoint}")
+        common_args.append("--password_file=")
         common_args.append("--use_socket")
         if self._readonly:
             common_args.append("--readonly")
@@ -279,12 +280,18 @@ class HsdsApp:
 
                 print(f"got status_code: {rsp.status_code} from req: {req}")
 
-                result["status_code"] = rsp.status_code
-
+                # TBD - return dataset data in base64
+                result["isBase64Encoded"] = False
+                result["statusCode"] = rsp.status_code
+                result["headers"] = rsp.headers
+            
                 #print_process_output(processes)
                 if rsp.status_code == 200:
                     print(f"rsp.text: {rsp.text}")
-                    result["output"] = rsp.text
+                    result["body"] = rsp.text
+                else:
+                    result["body"] = "{}" 
+                    
             except Exception as e:
                 print(f"got exception: {e}, quitting")
             except KeyboardInterrupt:
