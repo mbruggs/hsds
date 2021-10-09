@@ -2,6 +2,7 @@ import requests_unixsocket
 import time
 #import base64
 import subprocess
+import uuid
 import multiprocessing
 import queue
 import threading
@@ -53,7 +54,9 @@ class HsdsApp:
         """
         Initializer for class
         """
-        tmp_dir = "/tmp/"
+        rand_name = uuid.uuid4().hex[:8]
+        tmp_dir = f"/tmp/hs{rand_name}/"
+        os.mkdir(tmp_dir)
         
         self._dn_urls = []
         self._socket_paths = []
