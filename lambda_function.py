@@ -54,7 +54,7 @@ class HsdsApp:
         Initializer for class
         """
         # self._tempdir = tempfile.TemporaryDirectory()
-        socket_dir = "%2Ftmp%2F"
+        tmp_dir = "/tmp/"
         
         # socket_dir = "%2Ftmp%2F"  # TBD: use temp dir
         self._dn_urls = []
@@ -68,14 +68,22 @@ class HsdsApp:
 
         self.log = HsdsLogger()
 
+        # url-encode any slashed in the socket dir
+        socket_url = ""
+        for ch in self._socket_dir:
+            if ch == '/':
+                socket_url += "%2F"
+            else:
+                socket_url += ch
+
         for i in range(dn_count):
-            dn_url = f"http+unix://{socket_dir}dn_{(i+1)}.sock"
+            dn_url = f"http+unix://{socket_url}dn_{(i+1)}.sock"
             self._dn_urls.append(dn_url)
 
         # sort the ports so that node_number can be determined based on dn_url
         self._dn_urls.sort()
-        self._endpoint = f"http+unix://{socket_dir}sn_1.sock"
-        self._rangeget_url = f"http+unix://{socket_dir}rangeget.sock"
+        self._endpoint = f"http+unix://{socket_url}sn_1.sock"
+        self._rangeget_url = f"http+unix://{socket_url}rangeget.sock"
 
 
     @property
@@ -174,6 +182,41 @@ class HsdsApp:
                 t.start()
                 self._threads.append(t)
 
+        # wait to sockets are initialized
+        start_ts = time.time()
+        socket_paths = []
+        for i in range(count):
+            socket_path = f"{self._socket_dir}dn_{i+1}.sock"
+            socket_paths.append(socket_path)
+        # sn and rangeget socket paths
+        socket_path = f"{self._socket_dir}sn_1.sock"
+        socket_paths.append(socket_path)
+        socket_path = f"{self._socket_dir}rangeget.sock"
+        socket_paths.append(socket_path)
+
+        SLEEP_TIME = 0.1  # time to sleep between checking on socket connection
+        MAX_INIT_TIME = 10.0  # max time to wait for socket to be initialized
+
+        while True:
+            ready = 0
+            for socket_path in socket_paths:
+                if os.path.exists(socket_path):
+                    ready += 1
+            if ready == count:
+                self.log.info("all processes ready!")
+                break
+            else:
+                self.log.debug(f"{ready}/{count} ready")
+                self.log.debug(f"sleeping for {SLEEP_TIME}")
+                time.sleep(SLEEP_TIME)
+                if time.time() > start_ts + MAX_WAIT_TIME:
+                    msg = f"faield to terminate subprocesses after {MAX_INIT_TIME} seconds"
+                    self.log.error(msg)
+                    break
+                
+        self.log.info(f"Ready after: {(time.time()-start_ts):4.2f} s")
+
+
     def stop(self):
         """ terminate hsds processes
         """
@@ -185,15 +228,25 @@ class HsdsApp:
             self.log.info(f"sending SIGINT to {p.args[0]}")
             p.send_signal(signal.SIGINT)
         # wait for sub-proccesses to exit
-        # wait for up to 2 seconds -- 20 * 0.1
-        for i in range(20):
+        SLEEP_TIME = 0.1  # time to sleep between checking on process state
+        MAX_WAIT_TIME = 10.0  # max time to wait for sub-process to terminate
+        start_ts = time.time()
+
+        while True:
             is_alive = False
             for p in self._processes:
                 if p.poll() is None:
                     is_alive = True
             if is_alive:
-                self.log.debug("still alive, sleep 0.1")
-                time.sleep(0.1)
+                self.log.debug(f"still alive, sleep {SLEEP_TIME}")
+                time.sleep(SLEEP_TIME)
+            else:
+                self.log.debug("all subprocesses exited")
+                break
+            if time.time() > start_ts + MAX_WAIT_TIME:
+                msg = f"failed to terminate after {MAX_WAIT_TIME} seconds"
+                self.log.error(msg)
+                break
 
         # kill any reluctant to die processes        
         for p in self._processes:
@@ -343,7 +396,6 @@ def lambda_handler(event, context):
     else:
         # base dn count on half the VCPUs (rounded up)
         target_dn_count = - (-cpu_count // 2)
-    target_dn_count = 1 # test
     print(f"setting dn count to: {target_dn_count}")
 
     # instantiate hsdsapp object
