@@ -53,11 +53,10 @@ class HsdsApp:
         """
         Initializer for class
         """
-        # self._tempdir = tempfile.TemporaryDirectory()
         tmp_dir = "/tmp/"
         
-        # socket_dir = "%2Ftmp%2F"  # TBD: use temp dir
         self._dn_urls = []
+        self._socket_paths = []
         self._processes = []
         self._queues = []
         self._threads = []
@@ -77,14 +76,18 @@ class HsdsApp:
                 socket_url += ch
 
         for i in range(dn_count):
-            dn_url = f"http+unix://{socket_url}dn_{(i+1)}.sock"
+            socket_name = f"dn_{(i+1)}.sock"
+            dn_url = f"http+unix://{socket_url}{socket_name}"
             self._dn_urls.append(dn_url)
+            socket_path = f"{tmp_dir}{socket_name}"
+            self._socket_paths.append(socket_path)
 
         # sort the ports so that node_number can be determined based on dn_url
         self._dn_urls.sort()
         self._endpoint = f"http+unix://{socket_url}sn_1.sock"
+        self._socket_paths.append(f"{tmp_dir}sn_1.sock")
         self._rangeget_url = f"http+unix://{socket_url}rangeget.sock"
-
+        self._socket_paths.append(f"{tmp_dir}rangeget.sock")
 
     @property
     def endpoint(self):
@@ -184,22 +187,12 @@ class HsdsApp:
 
         # wait to sockets are initialized
         start_ts = time.time()
-        socket_paths = []
-        for i in range(count):
-            socket_path = f"{self._socket_dir}dn_{i+1}.sock"
-            socket_paths.append(socket_path)
-        # sn and rangeget socket paths
-        socket_path = f"{self._socket_dir}sn_1.sock"
-        socket_paths.append(socket_path)
-        socket_path = f"{self._socket_dir}rangeget.sock"
-        socket_paths.append(socket_path)
-
         SLEEP_TIME = 0.1  # time to sleep between checking on socket connection
         MAX_INIT_TIME = 10.0  # max time to wait for socket to be initialized
 
         while True:
             ready = 0
-            for socket_path in socket_paths:
+            for socket_path in self._socket_paths:
                 if os.path.exists(socket_path):
                     ready += 1
             if ready == count:
