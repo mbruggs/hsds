@@ -70,7 +70,7 @@ class HsdsApp:
 
         # url-encode any slashed in the socket dir
         socket_url = ""
-        for ch in self._socket_dir:
+        for ch in tmp_dir:
             if ch == '/':
                 socket_url += "%2F"
             else:
@@ -209,8 +209,8 @@ class HsdsApp:
                 self.log.debug(f"{ready}/{count} ready")
                 self.log.debug(f"sleeping for {SLEEP_TIME}")
                 time.sleep(SLEEP_TIME)
-                if time.time() > start_ts + MAX_WAIT_TIME:
-                    msg = f"faield to terminate subprocesses after {MAX_INIT_TIME} seconds"
+                if time.time() > start_ts + MAX_INIT_TIME:
+                    msg = f"failed to initialzie socket after {MAX_INIT_TIME} seconds"
                     self.log.error(msg)
                     break
                 
