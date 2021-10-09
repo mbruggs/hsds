@@ -1,6 +1,6 @@
 import requests_unixsocket
 import time
-#import base64
+import json
 import subprocess
 import uuid
 import multiprocessing
@@ -157,6 +157,7 @@ class HsdsApp:
         common_args.append(f"--rangeget_url={self._rangeget_url}")
         common_args.append(f"--hsds_endpoint={self._endpoint}")
         common_args.append("--password_file=")
+        common_args.append("--server_name=HSDS on AWS Lambda")
         common_args.append("--use_socket")
         if self._readonly:
             common_args.append("--readonly")
@@ -283,7 +284,7 @@ class HsdsApp:
                 # TBD - return dataset data in base64
                 result["isBase64Encoded"] = False
                 result["statusCode"] = rsp.status_code
-                result["headers"] = rsp.headers
+                result["headers"] =  json.dumps(rsp.headers)
             
                 #print_process_output(processes)
                 if rsp.status_code == 200:
@@ -291,7 +292,7 @@ class HsdsApp:
                     result["body"] = rsp.text
                 else:
                     result["body"] = "{}" 
-                    
+
             except Exception as e:
                 print(f"got exception: {e}, quitting")
             except KeyboardInterrupt:
