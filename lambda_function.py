@@ -156,6 +156,7 @@ class HsdsApp:
         common_args.append(f"--rangeget_url={self._rangeget_url}")
         common_args.append(f"--hsds_endpoint={self._endpoint}")
         common_args.append("--use_socket")
+        common_args.append("--readonly")
 
         for i in range(count):
             if i == 0:
