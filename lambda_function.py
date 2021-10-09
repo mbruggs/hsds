@@ -50,7 +50,7 @@ class HsdsApp:
     Class to initiate and manage sub-process HSDS service
     """
 
-    def __init__(self, username=None, password=None,  dn_count=1, logfile=None):
+    def __init__(self, username=None, password=None,  dn_count=1, readonly=False, logfile=None):
         """
         Initializer for class
         """
@@ -67,6 +67,7 @@ class HsdsApp:
         self._username = username
         self._password = password
         self._logfile = logfile
+        self._readonly = readonly
 
         self.log = HsdsLogger()
 
@@ -156,7 +157,8 @@ class HsdsApp:
         common_args.append(f"--rangeget_url={self._rangeget_url}")
         common_args.append(f"--hsds_endpoint={self._endpoint}")
         common_args.append("--use_socket")
-        common_args.append("--readonly")
+        if self._readonly:
+            common_args.append("--readonly")
 
         for i in range(count):
             if i == 0:
@@ -369,6 +371,27 @@ def lambda_handler(event, context):
     params = getEventParams(event)
     req = getEventPath(event)
     print(f"got req path: {req}")
+
+    # determine if this method will modify storage
+    # if not, we'll pass readonly to the dn nodes so they
+    # will not run s3sync task
+    if method == "GET":
+        readonly = True
+    elif method == "PUT":
+        readonly = False
+    elif method == "DELETE":
+        readonly = False
+    elif method == "POST":
+        # post is write unless we are doing a point selection
+        if req.startswith("/datasets") and req.endswith("value"):
+            readonly = True
+        else:
+            readonly = False
+
+    else:
+        print(f"unexpected method: {method}")
+        readonly = False
+
  
     if not isinstance(headers, dict):
         err_msg = f"expected headers to be a dict, but got: {type(headers)}"
@@ -396,7 +419,7 @@ def lambda_handler(event, context):
     print(f"setting dn count to: {target_dn_count}")
 
     # instantiate hsdsapp object
-    hsds = HsdsApp(username=function_name, password="lambda", dn_count=target_dn_count)
+    hsds = HsdsApp(username=function_name, password="lambda", dn_count=target_dn_count, readonly=readonly)
     hsds.run()
 
     result = hsds.invoke(method, req, params=params, headers=headers, body=body)
