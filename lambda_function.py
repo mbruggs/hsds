@@ -284,7 +284,8 @@ class HsdsApp:
                 # TBD - return dataset data in base64
                 result["isBase64Encoded"] = False
                 result["statusCode"] = rsp.status_code
-                result["headers"] =  json.dumps(rsp.headers)
+                # convert case-insisitive headers to dict
+                result["headers"] =  json.dumps(dict(rsp.headers))
             
                 #print_process_output(processes)
                 if rsp.status_code == 200:
@@ -421,10 +422,11 @@ def lambda_handler(event, context):
     print(f"got cpu_count of: {cpu_count}")
     if "TARGET_DN_COUNT" in os.environ:
         target_dn_count = int(os.environ["TARGET_DN_COUNT"])
+        print(f"get env override for target_dn_count of: {target_dn_count}")
     else:
         # base dn count on half the VCPUs (rounded up)
         target_dn_count = - (-cpu_count // 2)
-    print(f"setting dn count to: {target_dn_count}")
+        print(f"setting dn count to: {target_dn_count}")
 
     # instantiate hsdsapp object
     hsds = HsdsApp(username=function_name, password="lambda", dn_count=target_dn_count, readonly=readonly)
