@@ -412,6 +412,13 @@ def lambda_handler(event, context):
         print(err_msg)
         return {"status_code": 400, "error": err_msg}
     
+    if "accept" in headers:
+        accept = headers["accept"]
+        print(f"request accept type: {accept}")
+        if accept == "application/octet-stream":
+            print("replacing binary accept with json")
+            headers["accept"] = "aplication/json"
+    
     body = getEventBody(event)
     if body and method not in ("PUT", "POST"):
         err_msg = "body only support with PUT and POST methods"

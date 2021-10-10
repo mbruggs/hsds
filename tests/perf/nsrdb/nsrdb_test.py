@@ -1,27 +1,54 @@
 import os
 import sys
 import random
+import logging
 import h5py
 import h5pyd
+import numpy as np
 
 HSDS_BUCKET = "nrel-pds-hsds" 
 HDF5_BUCKET = "nrel-pds-nsrdb"
 HSDS_FOLDER = "/nrel/nsrdb/"
 FILENAME = "v3/nsrdb_2000.h5" 
-SHAPE = (17568, 2018392)
+NUM_COLS = 17568
+NUM_ROWS = 2018392
 H5_PATH = "/wind_speed"
 OPTIONS = ("--hdf5", "--hsds", "--ros3")
 
 # Note: currently the ros3 option needs the h5py build from conda-forge
 
-index = None  
+# parse command line args
+option = None  # one of OPTIONS
+index = None
+block = None
+for narg in range(1, len(sys.argv)):
+    arg = sys.argv[narg]
+    if arg in OPTIONS:
+        option = arg
+    elif arg.startswith("--index="):
+        index = int(arg[len("--index="):])
+    elif arg.startswith("--block="):
+        block = int(arg[len("--block="):])
+    else:
+        print(f"unexpected argument: {arg}")
 
-if len(sys.argv) < 2 or sys.argv[1] not in OPTIONS:
-    print(f"usage: python nsrdb_test.py {OPTIONS} [--index=n]")
+if option is None:
+    print(f"usage: python nsrdb_test.py {OPTIONS} [--index=n] [--block=n]")
     sys.exit(0)
-if sys.argv[1] == "--hsds":
+
+if index is None:
+    # choose a random index
+    index = random.randrange(0, NUM_COLS)
+if block is None:
+    # read entire column in one call
+    block = NUM_ROWS
+
+loglevel = logging.DEBUG
+logging.basicConfig(format='%(asctime)s %(message)s', level=loglevel)
+    
+if option == "--hsds":
     f = h5pyd.File(HSDS_FOLDER+FILENAME, mode='r', use_cache=False, bucket=HSDS_BUCKET)
-elif sys.argv[1] == "--ros3":
+elif option == "--ros3":
     secret_id = os.environ["AWS_ACCESS_KEY_ID"]
     secret_id = secret_id.encode('utf-8')
     secret_key = os.environ["AWS_SECRET_ACCESS_KEY"]
@@ -31,17 +58,23 @@ elif sys.argv[1] == "--ros3":
 else:
     # --hdf5
     f = h5py.File(FILENAME, mode='r')
-if len(sys.argv) > 2 and sys.argv[2].startswith("--index="):
-    index = int(sys.argv[2][len("--index="):])
-else:
-    # choose a random index
-    index = random.randrange(0, SHAPE[0])
 
+# read dataset
 dset = f[H5_PATH]
 print(dset)
-arr = dset[index, :]
-print(f"{H5_PATH}[{index}:]: {arr}")
-print(f"{arr.min():4.2f}, {arr.max():4.2f}, {arr.mean():4.2f}")
+result = np.zeros((NUM_ROWS,), dtype=dset.dtype)
+# read by blocks
+num_blocks = -(-NUM_ROWS // block)  # integer ceiling
+for i in range(num_blocks):
+    start = i * block
+    end = start + block
+    if end > NUM_ROWS:
+        end = NUM_ROWS
+    print(f"read[{start}:{end}]")
+    arr = dset[index, start:end]
+    result[start:end] = arr
+print(f"{H5_PATH}[{index}:]: {result}")
+print(f"{result.min():4.2f}, {result.max():4.2f}, {result.mean():4.2f}")
 
 
 
