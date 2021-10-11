@@ -2,6 +2,7 @@ import os
 import sys
 import random
 import logging
+import time
 import h5py
 import h5pyd
 import numpy as np
@@ -43,11 +44,11 @@ if block is None:
     # read entire column in one call
     block = NUM_ROWS
 
-loglevel = logging.DEBUG
+loglevel = logging.WARNING
 logging.basicConfig(format='%(asctime)s %(message)s', level=loglevel)
     
 if option == "--hsds":
-    f = h5pyd.File(HSDS_FOLDER+FILENAME, mode='r', use_cache=False, bucket=HSDS_BUCKET)
+    f = h5pyd.File(HSDS_FOLDER+FILENAME, mode='r', use_cache=False, bucket=HSDS_BUCKET, retries=100)
 elif option == "--ros3":
     secret_id = os.environ["AWS_ACCESS_KEY_ID"]
     secret_id = secret_id.encode('utf-8')
@@ -70,11 +71,13 @@ for i in range(num_blocks):
     end = start + block
     if end > NUM_ROWS:
         end = NUM_ROWS
-    print(f"read[{start}:{end}]")
+    ts = time.time()
     arr = dset[index, start:end]
+    te = time.time()
     result[start:end] = arr
+    print(f"    read[{start}:{end}]: {arr.min():4.2f}, {arr.max():4.2f}, {arr.mean():4.2f}, {te-ts:4.2f} s") 
 print(f"{H5_PATH}[{index}:]: {result}")
-print(f"{result.min():4.2f}, {result.max():4.2f}, {result.mean():4.2f}")
+print(f"{result.min()}, {result.max()}, {result.mean():4.2f}")
 
 
 
