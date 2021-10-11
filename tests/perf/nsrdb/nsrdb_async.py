@@ -1,6 +1,7 @@
 import aiohttp
 import asyncio
 import sys
+import json
 import random
 import base64
 import logging
@@ -13,7 +14,7 @@ DOMAIN = "/nrel/nsrdb/v3/nsrdb_2000.h5"
 H5_PATH = "/wind_speed"
 DEFAULT_BLOCK_SIZE = 1000
 NUM_COLS = 17568
-NUM_ROWS = 2018392
+NUM_ROWS = 20000 # 2018392
 DSET_ID = "d-096b7930-5dc5b556-dbc8-00c5ad-8aca89"  # wind-speed dataset
 DSET_TYPE = 'i2'  # two-byte signed integer
 NUM_RETRIES = 10
@@ -21,6 +22,18 @@ SLEEP_TIME = 0.1
 
 cfg = Config()
 
+def isBinary(rsp):
+    """ return true if http response headers 
+    indicate binary data """
+    if 'Content-Type' not in rsp.headers:
+        return False  # assume text
+                    
+    if rsp.headers['Content-Type'] == "application/octet-stream":
+        return True
+    else:
+        return False
+                     
+   
 class DataFetcher:
     def __init__(self, app, max_tasks=10):
         self._app = app
@@ -197,20 +210,24 @@ class DataFetcher:
         self._app["request_count"] += 1
         async with session.get(req, headers=headers, params=params) as rsp:
             if rsp.status == 200:
-                if 'Content-Type' not in rsp.headers:
-                    msg = "expected Content-Type is response headers"
-                    logging.error(msg)
-                    raise ValueError(msg)
-                if rsp.headers['Content-Type'] != "application/octet-stream":
-                    msg = "expected binary response"
-                    logging.error(msg)
-                    raise IOError(msg)
-                data = await rsp.read() 
-                if len(data) != expected_bytes:
-                    msg = f"Expected {expected_bytes} but got: {len(data)}"
-                    logging.error(msg)
-                    raise IOError(msg)
-                arr = np.frombuffer(data, dtype=dt)
+                if isBinary(rsp):
+                    data = await rsp.read() 
+                    if len(data) != expected_bytes:
+                        msg = f"Expected {expected_bytes} but got: {len(data)}"
+                        logging.error(msg)
+                        raise IOError(msg)
+                    arr = np.frombuffer(data, dtype=dt)
+                else:
+                    # convert json data to numpy array
+                    body = await rsp.text()
+                    body_json = json.loads(body)
+                    if "value" not in body_json:
+                        msg = "expected 'value' key in response"
+                        logging.error(msg)
+                        raise IOError(msg)
+                    value = body_json["value"]
+                    arr = np.array(value, dtype=dt)
+                    
                 logging.debug(f"read_block({block}): got {arr.min()}, {arr.max()}, {arr.mean():4.2f}")
                 result = self.result
                 # slot in to result array
