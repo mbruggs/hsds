@@ -147,6 +147,7 @@ class DataFetcher:
 
                 if status_code == 200:
                     self._q.task_done()
+                    self._app["success_count"] += 1
                     if self._q.empty():
                         logging.info("no more work for this worker!")
                         break
@@ -156,10 +157,12 @@ class DataFetcher:
 
                 elif status_code == 503:
                     logging.warning(f"server too busy, sleeping for {sleep_time}")
+                    self._app["error_count"] += 1
                     await asyncio.sleep(sleep_time)
                     sleep_time *= 2  # wait twice as long next time
                 else:
                     logging.error(f"got status code: {status_code} retry: {retry_count}")
+                    self._app["error_count"] += 1
                     retry_count += 1
                     if retry_count > max_retries:
                         # move on to another block
@@ -172,6 +175,8 @@ class DataFetcher:
     async def read_block(self, session, block):
         row_start = block
         row_end = block + self.block_size
+        if row_end > NUM_ROWS:
+            row_end = NUM_ROWS
         num_rows = row_end - row_start
         index = self.index
         dt = np.dtype(self.dsettype)
@@ -189,6 +194,7 @@ class DataFetcher:
         params["bucket"] = self.bucket
         logging.debug(f"read_block({block}): sending req: {req}, {select}")
         status_code = 500
+        self._app["request_count"] += 1
         async with session.get(req, headers=headers, params=params) as rsp:
             if rsp.status == 200:
                 if 'Content-Type' not in rsp.headers:
@@ -217,11 +223,12 @@ class DataFetcher:
 # parse command line args
 index = None
 block_size = None
+log_level = logging.INFO
 max_tasks = 10
 for narg in range(1, len(sys.argv)):
     arg = sys.argv[narg]
     if arg in ("-h", "--help"):
-        print("usage: python nsrdb_async.py [--index=n] [--block==n] [--tasks=n]")
+        print("usage: python nsrdb_async.py [--index=n] [--block=n] [--tasks=n] [--loglevel={debug|info|warning|error}]")
         sys.exit(0)
     if arg.startswith("--index="):
         index = int(arg[len("--index="):])
@@ -229,6 +236,19 @@ for narg in range(1, len(sys.argv)):
         block_size = int(arg[len("--block="):])
     elif arg.startswith("--tasks="):
         max_tasks = int(arg[len("--tasks="):])
+    elif arg.startswith("--loglevel="):
+        level= arg[len("--loglevel="):]
+        if level == "debug":
+            log_level = logging.DEBUG
+        elif level == "info":
+            log_level = logging.INFO
+        elif level == "warning":
+            log_level = logging.WARNING
+        elif level == "error":
+            log_level = logging.ERROR
+        else:
+            print("unexpected log level:", log_level)
+            sys.exit(1)
     
     else:
         print(f"unexpected argument: {arg}")
@@ -240,8 +260,7 @@ if block_size is None:
     # read entire column in one call
     block_size = DEFAULT_BLOCK_SIZE
 
-loglevel = logging.INFO
-logging.basicConfig(format='%(asctime)s %(message)s', level=loglevel)
+logging.basicConfig(format='%(asctime)s %(message)s', level=log_level)
     
 # init app dictionary
 cfg["domain"] = DOMAIN
@@ -254,6 +273,9 @@ cfg["index"] = index
 cfg["num_rows"] = NUM_ROWS
 cfg["retries"] =  NUM_RETRIES
 cfg["sleep_time"] = SLEEP_TIME
+cfg["request_count"] = 0
+cfg["success_count"] = 0
+cfg["error_count"] = 0
 
 # array will be filled in by workers
 result = np.zeros((NUM_ROWS,), dtype=np.dtype(DSET_TYPE))
@@ -265,6 +287,9 @@ loop = asyncio.get_event_loop()
 loop.run_until_complete(data_fetcher.fetch())
 print(f"{H5_PATH}[{index}:]: {result}")
 print(f"{result.min()}, {result.max()}, {result.mean():4.2f}")
+print("num requests:", cfg["request_count"])
+print("num success:", cfg["success_count"])
+print("num failures:", cfg["error_count"])
 
  
 
