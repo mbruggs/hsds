@@ -119,7 +119,7 @@ def bindToSocket(url):
         raise ValueError(f"Invalid url for bindToSocket: {url}")
     # use a unix domain socket path
     path = getSocketPath(url)
-    print(f"got socketpath: {path}")
+    log.debug(f"got socketpath: {path}")
     # first, make sure the socket does not already exist
     try:
         os.unlink(path)
