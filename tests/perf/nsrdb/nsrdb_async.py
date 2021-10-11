@@ -143,8 +143,13 @@ class DataFetcher:
                 elapsed = time.time() - start_ts
                 msg = f"DataFetcher - task {block} start: {start_ts:.3f} "
                 msg += f"elapsed: {elapsed:.3f}"
+                logging.info(msg)
+
                 if status_code == 200:
                     self._q.task_done()
+                    if self._q.empty():
+                        logging.info("no more work for this worker!")
+                        break
                     block = await self._q.get()
                     retry_count = 0
                     sleep_time = self.sleep_time
@@ -163,7 +168,6 @@ class DataFetcher:
                         retry_count = 0
                         sleep_time = self.sleep_time
 
-                logging.info(msg)
 
     async def read_block(self, session, block):
         row_start = block
@@ -172,7 +176,7 @@ class DataFetcher:
         index = self.index
         dt = np.dtype(self.dsettype)
         if row_end > self.num_rows:
-            row_end = self._num_rows
+            row_end = self.num_rows
         expected_bytes = num_rows * dt.itemsize
 
         headers = self.getHeaders()
@@ -236,7 +240,7 @@ if block_size is None:
     # read entire column in one call
     block_size = DEFAULT_BLOCK_SIZE
 
-loglevel = logging.WARNING
+loglevel = logging.INFO
 logging.basicConfig(format='%(asctime)s %(message)s', level=loglevel)
     
 # init app dictionary
