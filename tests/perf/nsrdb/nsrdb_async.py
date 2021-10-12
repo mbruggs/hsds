@@ -19,6 +19,7 @@ DSET_ID = "d-096b7930-5dc5b556-dbc8-00c5ad-8aca89"  # wind-speed dataset
 DSET_TYPE = 'i2'  # two-byte signed integer
 NUM_RETRIES = 10
 SLEEP_TIME = 0.1
+MAX_SLEEP_TIME = 10.0
 
 cfg = Config()
 
@@ -119,10 +120,6 @@ class DataFetcher:
     @property
     def retries(self):
         return self._app["retries"]
-
-    @property
-    def sleep_time(self):
-        return self._app["sleep_time"]
          
 
     async def fetch(self):
@@ -144,7 +141,7 @@ class DataFetcher:
         async with aiohttp.ClientSession() as session:
             block = await self._q.get()
             retry_count = 0
-            sleep_time = self.sleep_time
+            sleep_time = SLEEP_TIME
 
             while True:
                 start_ts = time.time()
@@ -166,13 +163,15 @@ class DataFetcher:
                         break
                     block = await self._q.get()
                     retry_count = 0
-                    sleep_time = self.sleep_time
+                    sleep_time = SLEEP_TIME
 
                 elif status_code == 503:
                     logging.warning(f"server too busy, sleeping for {sleep_time}")
                     self._app["error_count"] += 1
                     await asyncio.sleep(sleep_time)
-                    sleep_time *= 2  # wait twice as long next time
+                    sleep_time *= 2.0  # wait twice as long next time
+                    if sleep_time > MAX_SLEEP_TIME:
+                        sleep_time = MAX_SLEEP_TIME
                 else:
                     logging.error(f"got status code: {status_code} retry: {retry_count}")
                     self._app["error_count"] += 1
@@ -182,7 +181,7 @@ class DataFetcher:
                         self._q.task_done()
                         block = await self._q.get()
                         retry_count = 0
-                        sleep_time = self.sleep_time
+                        sleep_time = SLEEP_TIME
 
 
     async def read_block(self, session, block):
@@ -289,7 +288,6 @@ cfg["block_size"] = block_size
 cfg["index"] = index
 cfg["num_rows"] = NUM_ROWS
 cfg["retries"] =  NUM_RETRIES
-cfg["sleep_time"] = SLEEP_TIME
 cfg["request_count"] = 0
 cfg["success_count"] = 0
 cfg["error_count"] = 0
