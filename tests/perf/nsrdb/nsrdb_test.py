@@ -22,6 +22,7 @@ OPTIONS = ("--hdf5", "--hsds", "--ros3")
 option = None  # one of OPTIONS
 index = None
 block = None
+log_level = logging.WARNING
 for narg in range(1, len(sys.argv)):
     arg = sys.argv[narg]
     if arg in OPTIONS:
@@ -30,11 +31,24 @@ for narg in range(1, len(sys.argv)):
         index = int(arg[len("--index="):])
     elif arg.startswith("--block="):
         block = int(arg[len("--block="):])
+    elif arg.startswith("--loglevel="):
+        level= arg[len("--loglevel="):]
+        if level == "debug":
+            log_level = logging.DEBUG
+        elif level == "info":
+            log_level = logging.INFO
+        elif level == "warning":
+            log_level = logging.WARNING
+        elif level == "error":
+            log_level = logging.ERROR
+        else:
+            print("unexpected log level:", log_level)
+            sys.exit(1)
     else:
         print(f"unexpected argument: {arg}")
 
 if option is None:
-    print(f"usage: python nsrdb_test.py {OPTIONS} [--index=n] [--block=n]")
+    print(f"usage: python nsrdb_test.py {OPTIONS} [--index=n] [--block=n] [--loglevel={debug|info|warning|error}]")
     sys.exit(0)
 
 if index is None:
@@ -44,8 +58,7 @@ if block is None:
     # read entire column in one call
     block = NUM_ROWS
 
-loglevel = logging.WARNING
-logging.basicConfig(format='%(asctime)s %(message)s', level=loglevel)
+logging.basicConfig(format='%(asctime)s %(message)s', level=log_level)
     
 if option == "--hsds":
     f = h5pyd.File(HSDS_FOLDER+FILENAME, mode='r', use_cache=False, bucket=HSDS_BUCKET, retries=100)
