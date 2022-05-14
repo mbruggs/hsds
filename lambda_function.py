@@ -87,7 +87,7 @@ def invoke(hsds, method, path, params=None, headers=None, body=None):
                 # TBD - return dataset data in base64
                 result["isBase64Encoded"] = False
                 result["statusCode"] = rsp.status_code
-                # convert case-insisitive headers to dict
+                # convert case-insensitive headers to dict
                 result["headers"] =  json.dumps(dict(rsp.headers))
             
                 #print_process_output(processes)
@@ -140,7 +140,15 @@ def lambda_handler(event, context):
         return {"status_code": 400, "error": err_msg}
 
     headers = getEventHeaders(event)
+    print("event headers:")
+    for k in headers:
+        v = headers[k]
+        print(f"    {k}: {v}")
     params = getEventParams(event)
+    print("params:")
+    for k in params:
+        v = params[k]
+        print(f"    {k}: {v}")
     req = getEventPath(event)
     print(f"got req path: {req}")
 
@@ -207,7 +215,8 @@ def lambda_handler(event, context):
                    islambda=True,
                    dn_count=target_dn_count, 
                    readonly=readonly,
-                   socket_dir=socket_dir)
+                   socket_dir=socket_dir,
+                   log_level=log_level)
     hsds.run()
 
     # wait for server to startup
