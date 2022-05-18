@@ -84,14 +84,13 @@ def invoke(hsds, method, path, params=None, headers=None, body=None):
 
                 print(f"got status_code: {rsp.status_code} from req: {req}")
 
-                # TBD - return dataset data in base64
                 result["isBase64Encoded"] = False
                 result["statusCode"] = rsp.status_code
                 # convert case-insensitive headers to dict
                 result["headers"] =  json.dumps(dict(rsp.headers))
             
                 #print_process_output(processes)
-                if rsp.status_code == 200:
+                if rsp.status_code in (200, 201):
                     print(f"rsp.text: {rsp.text}")
                     result["body"] = rsp.text
                 else:
@@ -185,9 +184,9 @@ def lambda_handler(event, context):
     if "accept" in headers:
         accept = headers["accept"]
         print(f"request accept type: {accept}")
-        if accept == "application/octet-stream":
-            print("replacing binary accept with json")
-            headers["accept"] = "aplication/json"
+        #if accept == "application/octet-stream":
+        #    print("replacing binary accept with json")
+        #    headers["accept"] = "aplication/json"
     
     body = getEventBody(event)
     if body and method not in ("PUT", "POST"):
